@@ -1,0 +1,211 @@
+% ============================================================================
+% References cited by the synthetic-resdac-claims documentation.
+%
+% Conventions:
+%   - One entry per cited source.
+%   - Citation keys follow `<author-or-org>-<year>-<shortslug>` in lowercase.
+%   - Prefer @misc for online tabulations/dashboards, @article for journal
+%     articles, @techreport for government/agency reports, @manual for
+%     methodology pages.
+%   - Always include `urldate = {YYYY-MM-DD}` for web resources so future
+%     readers can correlate the cited values with archive snapshots.
+% ============================================================================
+
+@misc{kff-2016-chartpack,
+  author       = {{Kaiser Family Foundation}},
+  title        = {Profile of {Medicare} Beneficiaries by Race and Ethnicity: A Chartpack},
+  year         = {2016},
+  month        = mar,
+  howpublished = {\url{https://files.kff.org/attachment/chartpack-profile-of-medicare-beneficiaries-by-race-and-ethnicity-a-chartpack}},
+  note         = {Underlying data: Current Population Survey (CPS), 2012.},
+  urldate      = {2026-05-16},
+}
+
+@misc{kff-medicare-race-state-indicator,
+  author       = {{Kaiser Family Foundation}},
+  title        = {Distribution of {Medicare} Beneficiaries by Race/Ethnicity (State Health Facts)},
+  howpublished = {\url{https://www.kff.org/medicare/state-indicator/medicare-beneficiaries-by-raceethnicity/}},
+  urldate      = {2026-05-16},
+}
+
+@misc{kff-medicare-sex-state-indicator,
+  author       = {{Kaiser Family Foundation}},
+  title        = {Distribution of {Medicare} Beneficiaries by Sex (State Health Facts)},
+  howpublished = {\url{https://www.kff.org/medicare/state-indicator/medicare-beneficiaries-by-sex/}},
+  urldate      = {2026-05-16},
+}
+
+@article{eicheldinger-2008-rti-race,
+  author  = {Eicheldinger, Celia and Bonito, Arthur},
+  title   = {More Accurate Racial and Ethnic Codes for {Medicare} Administrative Data},
+  journal = {Health Care Financing Review},
+  volume  = {29},
+  number  = {3},
+  pages   = {27--42},
+  year    = {2008},
+  url     = {https://www.cms.gov/Research-Statistics-Data-and-Systems/Research/HealthCareFinancingReview/downloads/08springpg27.pdf},
+  urldate = {2026-05-16},
+}
+
+@misc{ccw-medicare-enrollment-charts,
+  author       = {{Chronic Conditions Data Warehouse}},
+  title        = {{Medicare} Enrollment Charts},
+  howpublished = {\url{https://www2.ccwdata.org/web/guest/medicare-charts/medicare-enrollment-charts}},
+  urldate      = {2026-05-16},
+}
+
+@misc{cms-medicare-enrollment-dashboard,
+  author       = {{Centers for Medicare \& Medicaid Services}},
+  title        = {{Medicare} Enrollment Dashboard},
+  howpublished = {\url{https://data.cms.gov/tools/medicare-enrollment-dashboard}},
+  urldate      = {2026-05-16},
+}
+
+@manual{resdac-rti-race-cd,
+  author       = {{Research Data Assistance Center (ResDAC)}},
+  title        = {{Medicare} -- Research Triangle Institute (RTI) Race Code},
+  howpublished = {\url{https://resdac.org/cms-data/variables/race-beneficiary}},
+  urldate      = {2026-05-16},
+}
+
+@manual{resdac-sex-cd,
+  author       = {{Research Data Assistance Center (ResDAC)}},
+  title        = {{Medicare} -- Sex Code (\texttt{BENE\_SEX\_IDENT\_CD})},
+  howpublished = {\url{https://resdac.org/cms-data/variables/sex-code}},
+  urldate      = {2026-05-16},
+}
+
+@misc{nber-ssa-fips-crosswalk-2025,
+  author       = {{National Bureau of Economic Research}},
+  title        = {{SSA-FIPS} State and County Crosswalk, 2025},
+  howpublished = {\url{https://data.nber.org/ssa-fips-state-county-crosswalk/2025/}},
+  note         = {Landing page:
+                  \url{https://www.nber.org/research/data/ssa-federal-information-processing-series-fips-state-and-county-crosswalk}.
+                  For 2022+ files, derived by joining the CMS IPPS
+                  FIPS--CBSA crosswalk with the CMS Medicare Advantage
+                  Ratebook (which still carries SSA codes); see
+                  \cite{cms-ipps-final-rule}.},
+  urldate      = {2026-05-16},
+}
+
+@misc{cms-ipps-final-rule,
+  author       = {{Centers for Medicare \& Medicaid Services}},
+  title        = {{Acute Inpatient Prospective Payment System (IPPS)} Final Rule Data Files},
+  howpublished = {\url{https://www.cms.gov/medicare/payment/prospective-payment-systems/acute-inpatient-pps}},
+  note         = {Published annually with each Fiscal Year Rule;
+                  contains FIPS--CBSA crosswalks. Starting 2022, SSA
+                  codes are no longer included.},
+  urldate      = {2026-05-16},
+}
+
+@misc{wilke-zipcodes-github,
+  author       = {Wilke, Claus O.},
+  title        = {{zipcodes}: Translate {ZIP} codes into {FIPS} codes},
+  howpublished = {GitHub repository, \url{https://github.com/clauswilke/zipcodes}},
+  note         = {MIT License. Marked "work in progress, not all zip
+                  codes are correctly mapped yet" in upstream README.
+                  Built on top of \cite{rozzi-zipcoder-cran}.},
+  urldate      = {2026-05-16},
+}
+
+@manual{rozzi-zipcoder-cran,
+  author       = {Rozzi, Gavin},
+  title        = {{zipcodeR}: Data \& Functions for Working with {US ZIP} Codes},
+  organization = {Comprehensive R Archive Network (CRAN)},
+  howpublished = {\url{https://cran.r-project.org/package=zipcodeR}},
+  note         = {MIT License. Backend data is derived from
+                  US Census Bureau and HUD open data sources.},
+  urldate      = {2026-05-16},
+}
+
+@misc{cms-desynpuf,
+  author       = {{Centers for Medicare \& Medicaid Services}},
+  title        = {2008--2010 Data Entrepreneurs' Synthetic Public Use File
+                  ({DE-SynPUF})},
+  howpublished = {\url{https://www.cms.gov/data-research/statistics-trends-and-reports/medicare-claims-synthetic-public-use-files/cms-2008-2010-data-entrepreneurs-synthetic-public-use-file-de-synpuf}},
+  note         = {U.S.~Government work, public domain. User manual:
+                  \url{https://www.cms.gov/Research-Statistics-Data-and-Systems/Downloadable-Public-Use-Files/SynPUFs/Downloads/SynPUF_DUG.pdf}.
+                  Codebook:
+                  \url{https://www.cms.gov/files/document/de-10-codebook.pdf-0}.
+                  20 independent 1\% samples, jointly approximating a
+                  20\% sample of 2008--2010 FFS Medicare beneficiaries.},
+  urldate      = {2026-05-16},
+}
+
+@misc{census-2020-dhc-p1,
+  author       = {{U.S. Census Bureau}},
+  title        = {2020 Census Demographic and Housing Characteristics File ({DHC}),
+                  Table {P1} (Race), Variable \texttt{P1\_001N}: Total Population,
+                  {ZIP} Code Tabulation Area summary level},
+  year         = {2023},
+  howpublished = {\url{https://data.census.gov/table/DECENNIALDHC2020.P1?q=population&g=010XX00US$8600000}},
+  note         = {U.S. Government work, public domain. DHC was released
+                  in 2023; values reflect the 2020 decennial enumeration.},
+  urldate      = {2026-05-16},
+}
+
+@misc{census-2022-ct-change,
+  author       = {{U.S. Census Bureau}},
+  title        = {Change to County-Equivalents in the State of {Connecticut}},
+  year         = {2022},
+  month        = jun,
+  howpublished = {Federal Register notice,
+                  \url{https://www.federalregister.gov/documents/2022/06/06/2022-12063/change-to-county-equivalents-in-the-state-of-connecticut}},
+  note         = {Replaces Connecticut's 8 legacy counties with 9
+                  planning regions as county-equivalents for Census
+                  Bureau statistics, effective 2024. Reflected in NBER
+                  crosswalks from 2024 onward; see
+                  \cite{nber-ssa-fips-crosswalk-2025}.},
+  urldate      = {2026-05-16},
+}
+
+@techreport{medpac-2019-encounter-data,
+  author      = {{Medicare Payment Advisory Commission (MedPAC)}},
+  title       = {Ensuring the Accuracy and Completeness of {Medicare} Advantage Encounter Data},
+  type        = {Report to the Congress, ch.~7},
+  institution = {MedPAC},
+  year        = {2019},
+  month       = jun,
+  url         = {https://www.medpac.gov/wp-content/uploads/import_data/scrape_files/docs/default-source/reports/jun19_ch7_medpac_reporttocongress_sec.pdf},
+  urldate     = {2026-05-16},
+}
+
+@misc{audirac-2023-cms-prep,
+  author       = {Audirac, Michelle and Bouzinier, Michael and Braun, Danielle and Shad, Mahmood M. and Yockel, Scott},
+  title        = {Systematic Approach to Preparing of Medical Claims Data for Biomedical Research},
+  year         = {2023},
+  month        = sep,
+  publisher    = {F1000 Research Ltd},
+  howpublished = {Slides / posted content},
+  doi          = {10.7490/f1000research.1119612.1},
+  url          = {https://doi.org/10.7490/f1000research.1119612.1},
+  note         = {Describes the DSL-based pipeline that produced the
+                  empirical MEDPAR-quality measurements used to
+                  parameterize \texttt{state\_error\_medpar\_rates.csv}.
+                  Underlying CMS data is confidential.},
+  urldate      = {2026-05-16},
+}
+
+% Forthcoming chapter; structural metadata (DOIs, ISBNs, series) is final
+% per the publisher. Title / authors / editors / book title to be filled
+% in once the volume ships. Search this file for `FORTHCOMING` to find
+% the placeholders that still need editing.
+@incollection{bouzinier-2026-springer-ch8,
+  author    = {{FORTHCOMING}},
+  title     = {{FORTHCOMING (Chapter 8)}},
+  booktitle = {{FORTHCOMING}},
+  editor    = {{FORTHCOMING}},
+  series    = {SpringerBriefs in Computer Science},
+  issn      = {2191-5768},
+  publisher = {Springer},
+  year      = {2026},
+  chapter   = {8},
+  isbn      = {978-3-032-21031-9},
+  doi       = {10.1007/978-3-032-21032-6_8},
+  url       = {https://doi.org/10.1007/978-3-032-21032-6_8},
+  note      = {Electronic ISBN 978-3-032-21032-6; electronic ISSN
+               2191-5776. Companion publication to
+               \cite{audirac-2023-cms-prep} expanding the MEDPAR data
+               quality findings used to parameterize
+               \texttt{state\_error\_medpar\_rates.csv}.},
+}

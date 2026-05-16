@@ -1,0 +1,27 @@
+# Internal/private docs not to be published
+docs-internal/
+
+# Generated outputs
+output_dat_files/
+
+# Lazy-downloaded CMS DE-SynPUF samples (fetched by `synthmed download-samples`)
+inputs/samples/*.csv
+inputs/samples/*.zip
+inputs/samples/*.tmp
+inputs/samples/synthmed-dl-*/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+.env
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+
+# IDE
+.idea/
+.vscode/
