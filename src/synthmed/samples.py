@@ -91,11 +91,26 @@ class HashMismatchError(RuntimeError):
     """Raised when a downloaded sample's SHA-256 does not match the manifest."""
 
 
-def _sha256_of(path: Path, _chunk: int = 1024 * 1024) -> str:
+def _sha256_of(path: Path) -> str:
+    """SHA-256 of the file content, normalizing CRLF to LF first.
+
+    CMS has been observed to re-emit the DE-SynPUF ZIPs with Windows-style
+    CRLF line endings without changing any actual record content. The
+    manifest pins the content hash, not the byte hash, so the verifier
+    is robust to that cosmetic churn while still tripping on any real
+    data change.
+    """
     h = hashlib.sha256()
     with path.open("rb") as f:
-        while chunk := f.read(_chunk):
-            h.update(chunk)
+        for line in f:
+            if line.endswith(b"\r\n"):
+                h.update(line[:-2])
+                h.update(b"\n")
+            elif line.endswith(b"\r"):
+                h.update(line[:-1])
+                h.update(b"\n")
+            else:
+                h.update(line)
     return h.hexdigest()
 
 

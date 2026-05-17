@@ -1,0 +1,72 @@
+# Citation File Format 1.2.0  —  https://citation-file-format.github.io/
+# GitHub renders a "Cite this repository" button in the right sidebar
+# when this file is present at the repo root.
+cff-version: 1.2.0
+title: "synthetic-resdac-claims (synthmed)"
+message: >-
+  If you use this software in academic work, please cite it using the
+  metadata below. The companion synthetic dataset is archived on
+  Zenodo at the DOI given under `identifiers`.
+type: software
+authors:
+  - family-names: Belakurski
+    given-names: Pavel
+    alias: ChilliPenguin
+    affiliation: Northwestern University
+    orcid: "https://orcid.org/0009-0006-4271-9728"
+  - family-names: Etin
+    given-names: Dmitry
+    affiliation: Deggendorf Institute of Technology
+    orcid: "https://orcid.org/0000-0003-1068-2781"
+  - family-names: Bouzinier
+    given-names: Michael
+    email: michael.bouzinier@forome.org
+    affiliation: Harvard University
+    orcid: "https://orcid.org/0000-0002-3161-5601"
+repository-code: "https://github.com/forome/synthetic-resdac-claims"
+license: Apache-2.0
+keywords:
+  - medicare
+  - resdac
+  - synthetic-data
+  - claims
+  - medpar
+  - mbsf
+abstract: >-
+  synthmed is a Python package that generates synthetic ResDAC /
+  Medicare claims data (MEDPAR, MBSF) as fixed-width DAT files conforming
+  to a set of ResDAC File Transfer Specification (FTS) schemas.  It
+  maintains a single internal cohort of synthetic beneficiaries and
+  rolls it forward year-by-year so that demographics, IDs, locations,
+  and diagnosis histories stay consistent across files; realistic
+  data-quality errors are injected on the way through.
+
+# Companion synthetic dataset (output of running this software) archived
+# on Zenodo under CC-BY-4.0. Tools that follow CFF's `preferred-citation`
+# convention will surface this as the recommended cite-target.
+preferred-citation:
+  type: dataset
+  title: >-
+    Synthetic Medicare-Like Inpatient Claims and Beneficiary Data
+    Conforming to ResDAC FTS Layouts
+  authors:
+    - family-names: Belakurski
+      given-names: Pavel
+      affiliation: Northwestern University
+      orcid: "https://orcid.org/0009-0006-4271-9728"
+    - family-names: Etin
+      given-names: Dmitry
+      affiliation: Deggendorf Institute of Technology
+      orcid: "https://orcid.org/0000-0003-1068-2781"
+    - family-names: Bouzinier
+      given-names: Michael
+      affiliation: Harvard University
+      orcid: "https://orcid.org/0000-0002-3161-5601"
+  year: 2026
+  month: 3
+  publisher:
+    name: Zenodo
+  version: v1
+  doi: 10.5281/zenodo.18915558
+  url: "https://doi.org/10.5281/zenodo.18915558"
+  license: CC-BY-4.0

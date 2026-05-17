@@ -10,8 +10,32 @@ diagnosis histories stay consistent across files. Realistic data-quality
 errors (race miscoding, date-of-birth drift, state-correlated null IDs)
 are injected on the way through.
 
-> Originally a notebook prototype by
-> [Pavel Belakurski](https://github.com/ChilliPenguin/SynthMed).
+## Authors
+
+- **Pavel Belakurski** — Northwestern University
+  ([@ChilliPenguin](https://github.com/ChilliPenguin),
+  [ORCID 0009-0006-4271-9728](https://orcid.org/0009-0006-4271-9728)) —
+  original design and prototype implementation
+  ([ChilliPenguin/SynthMed](https://github.com/ChilliPenguin/SynthMed)).
+- **Dmitry Etin** — Deggendorf Institute of Technology
+  ([ORCID 0000-0003-1068-2781](https://orcid.org/0000-0003-1068-2781)).
+- **Michael Bouzinier** — Harvard University
+  ([@mmcentre](https://github.com/mmcentre),
+  [ORCID 0000-0002-3161-5601](https://orcid.org/0000-0002-3161-5601)) —
+  packaging, refactor into a Python library, and input data provenance.
+
+## Citation
+
+A companion synthetic-data release is archived on Zenodo:
+
+> Belakurski, P., Etin, D., & Bouzinier, M. (2026).
+> *Synthetic Medicare-Like Inpatient Claims and Beneficiary Data
+> Conforming to ResDAC FTS Layouts* (v1) [Data set]. Zenodo.
+> <https://doi.org/10.5281/zenodo.18915558>
+
+See [`CITATION.cff`](CITATION.cff) for the machine-readable citation;
+GitHub renders a *Cite this repository* button in the right sidebar
+from it.
 
 ## Status
 

@@ -21,6 +21,13 @@ SHA-256 hashes for all 20 files are pinned in
 (`INPATIENT_SAMPLES`). The downloader refuses to use a file whose
 hash does not match the pinned value.
 
+> **Line-ending normalization.** CMS has been observed to re-emit the
+> ZIPs with CRLF line endings without changing the actual record
+> content. The verifier in
+> [`synthmed.samples._sha256_of`](../../src/synthmed/samples.py)
+> normalizes CRLF → LF before hashing, so the pinned hashes survive
+> that cosmetic churn while still detecting any real data change.
+
 ## Provenance
 
 CMS Data Entrepreneurs' Synthetic Public Use File (DE-SynPUF),
@@ -111,6 +118,11 @@ Redistributed locally (after download) under the repo's
 
 ## Change log
 
+- **2026-05-16 — Verifier made line-ending-agnostic.** First real
+  download from CMS produced files with CRLF endings vs. Pavel's
+  LF-format local copy; content was byte-identical otherwise.
+  `_sha256_of` now normalizes CRLF→LF before hashing so the manifest
+  survives that. Pinned hashes unchanged.
 - _Initial version_ — moved out of `pavel/SynthMed/medicare_sample_data/`
   on 2026-05-16. Files are no longer committed; lazy-downloaded into
   `inputs/samples/` by
