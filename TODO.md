@@ -177,6 +177,29 @@ See [`docs/distributions/ssa_fips_state_county_2025.md`](docs/distributions/ssa_
 
 See [`docs/distributions/state_error_medpar_rates.md`](docs/distributions/state_error_medpar_rates.md).
 
+- [x] ~~No "orphan" admissions — cross-table consistency too tight.~~
+  **Fixed 2026-05-17** by adding `GenerationConfig.orphan_admission_rate`
+  (default `0.01`) and a new helper
+  [`synthmed.medpar._inject_orphan_ids`](src/synthmed/medpar.py) that
+  replaces BENE_ID on a small fraction of MEDPAR rows with fresh,
+  unseen IDs (same 12+3-char format as cohort IDs). Those admissions
+  no longer match any MBSF row, producing exactly the orphan pattern
+  dorieh's `medicare.qc_admissions` materialized view expects.
+  *Surfaced by the 5 M-run dashboard verification: the
+  "Medicare QC (Clean)" Superset dashboard broke on zero orphans;
+  with the fix in place the count is small-but-positive as expected.*
+  Follow-ups:
+  - [ ] Calibrate the 1% default against an empirical real-data
+    measurement (same authorization caveat as for
+    `state_error_medpar_rates.csv`).
+  - [ ] Optional: extend to per-state orphan rates, mirroring the
+    state-correlated structure of the existing MEDPAR error
+    table.
+- [ ] **DOB discrepancy distribution drift.** *Minor finding 2026-05-17
+  from the dashboard comparison; specifics TBD.* The injected DOB
+  errors render in the dashboard but the shape or magnitude appears
+  slightly off vs. real-data patterns. M.~Bouzinier to expand with the
+  concrete delta when convenient.
 - [ ] **Fill in `@bouzinier-2026-springer-ch8` placeholder once the
   volume ships.** Chapter title, author list, book title, and editors
   are tagged `FORTHCOMING` in

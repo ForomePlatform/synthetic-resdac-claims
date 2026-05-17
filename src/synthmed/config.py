@@ -43,6 +43,13 @@ class GenerationConfig:
     no_medpar_error_rate: float = 0.01
     new_enrollment_no_medpar_rate: float = 0.009
 
+    orphan_admission_rate: float = 0.01
+    """Fraction of MEDPAR admissions to assign a fresh, never-enrolled
+    BENE_ID (instead of one carried over from the cohort). Models the
+    small but real population of admissions in CMS data with no matching
+    enrollment row, typically caused by enrollment-data lag, retroactive
+    enrollment, or upstream admin errors. Set to 0 to disable."""
+
     max_diag_columns: int = 25
     sampled_diag_columns: int = 10
 
