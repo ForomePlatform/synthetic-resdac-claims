@@ -66,7 +66,7 @@ pip install -e .
 ```
 
 Requires Python 3.10+. The package depends on
-[`dorieh`](https://github.com/forome/dorieh) for FTS parsing.
+[`dorieh`](https://github.com/ForomePlatform/dorieh) for FTS parsing.
 
 ## Usage
 
