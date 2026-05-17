@@ -51,3 +51,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 synthmed = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"

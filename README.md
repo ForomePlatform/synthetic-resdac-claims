@@ -39,25 +39,36 @@ from it.
 
 ## Status
 
-Alpha. The migration from the original notebook is structurally complete:
+Alpha — functional and exercised end-to-end at production scale:
 
-- All reference inputs live under [`inputs/`](inputs/). The seven
-  distribution files in [`inputs/distributions/`](inputs/distributions/)
-  each have a sidecar under
-  [`docs/distributions/`](docs/distributions/) covering format,
+- Migration from the original notebook is complete. All reference
+  inputs live under [`inputs/`](inputs/) with per-file sidecars
+  under [`docs/distributions/`](docs/distributions/) covering format,
   provenance, license, and how `synthmed` consumes them. Citations are
   consolidated in [`docs/references.bib`](docs/references.bib).
 - The ~320 MB CMS DE-SynPUF inpatient samples are
   **lazy-downloaded** from CMS into `inputs/samples/` by
   `synthmed download-samples` (or on first generation run).
+- **Generation has been exercised at 5 million beneficiaries**
+  end-to-end on a developer laptop. Two smoke tests under
+  [`tests/`](tests/) cover pipeline completion + bit-for-bit
+  reproducibility under a fixed
+  [`GenerationConfig.seed`](src/synthmed/config.py).
 - A handful of distribution values are intentionally approximate and
   distorted (the underlying CMS data is confidential); each sidecar's
   *Provenance* section is explicit about what is and isn't backed by
   a public source.
 
-What's still alpha-grade — no regression tests, a few known
-simplifications and small bugs are enumerated
-in [TODO.md](TODO.md).
+What's still alpha-grade:
+
+- **Semantic correctness of outputs has not yet been independently
+  validated.** Downstream pipeline / dashboard verification on the
+  5 M-beneficiary run is in progress; until it lands, "the pipeline
+  runs and produces structurally-correct files" is all we can claim.
+- A handful of known simplifications and small bugs are enumerated in
+  [TODO.md](TODO.md) — notably the Connecticut planning-region silent
+  drop, and the decoupling between `number_of_diagnoses` and which
+  `diag_k` columns get filled.
 
 ## Install
 

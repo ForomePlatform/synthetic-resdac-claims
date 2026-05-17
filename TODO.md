@@ -56,13 +56,27 @@ See [`docs/distributions/number_of_diagnoses.md`](docs/distributions/number_of_d
   one admission are drawn jointly from a single CMS DE-SynPUF row, but
   a patient's subsequent admissions are independent of their prior
   ones. Real claims data show strong sequential / chronic-condition
-  patterns.
+  patterns. Implementation sketch: tag each beneficiary in the internal
+  cohort with a latent chronic-condition state, then condition each
+  admission's diag draw on that state. Extension to **multi-year**
+  trajectories (state persists across `increment_internal_database`
+  calls) is the natural next step. **Privacy constraint:** deriving the
+  joint table from a real confidential CMS extract carries
+  re-identification risk (rare pairs of specific illnesses can be
+  near-identifying); any data-derived table must go through
+  documented anti-leakage noise before being shipped, matching the
+  pattern already used for [[state_error_medpar_rates.csv]] and
+  [[diag1.csv]].
 - [ ] **ICD-9 only; only 10 codes used per admission.** DE-SynPUF only
   exposes ICD-9 and only `ICD9_DGNS_CD_1..10`; columns `diag_11..diag_25`
   in the internal cohort are left as blank space. Modern Medicare uses
   ICD-10 and ~56% of admissions exceed 10 diagnoses.
 - [ ] **No conditioning on demographics or region.** Diagnosis draws
   ignore age, sex, race, and geography of the synthetic beneficiary.
+  **Privacy constraint:** the same re-identification risk as for the
+  joint-across-admissions item applies — any data-derived
+  age/sex/region × diagnosis table must be passed through documented
+  anti-leakage noise before publication.
 - [ ] **`diag1.csv` consumer decision is open.** The 4076-row primary-dx
   marginal frequency table is read into `DistributionData.diag1` but no
   active code path samples from it
@@ -89,9 +103,23 @@ See [`docs/distributions/number_of_diagnoses.md`](docs/distributions/number_of_d
   strings.** Matches the upstream prototype but yields semantically
   meaningless values (e.g. HMO sub-indicators, payment codes). Each new
   override would tighten realism for specific downstream consumers.
-- [ ] **Buy-In / HMO month flags not coherent with the annual
-  indicator.** `*_MO` columns are drawn independently of the matching
-  yes/no indicator.
+- [ ] **HMO / Buy-In / dual-eligibility coverage columns are
+  unconditioned and not internally coherent.** Affects
+  `hmo_indicator*`, `buyin*`, `dual_*`, and their matching
+  `{hmo|buyin|dual}_mo` month-flag columns. Three layered issues:
+  1. *Within-row incoherence:* `*_MO` columns are drawn independently
+     of the matching annual yes/no indicator, so a beneficiary can
+     show "no HMO" annually but `HMO_MO = 7`.
+  2. *Missing column family:* `dual_*` (dual Medicare/Medicaid
+     eligibility) is not currently modeled at all — entries fall
+     through to the default random-digit `CHAR` path.
+  3. *Downstream coupling not modeled:* coverage status is a major
+     driver of MEDPAR admission counts in real data (dual-eligible and
+     non-HMO beneficiaries admit more often), but
+     [`generate_medpar_stats`](src/synthmed/internal_db.py) draws
+     `number_of_records` from a single Poisson with no conditioning.
+     Treating coverage as a covariate of the Poisson mean is the next
+     fidelity step.
 
 ## Geographic / crosswalk
 
@@ -207,11 +235,62 @@ and [`src/synthmed/samples.py`](src/synthmed/samples.py).
 - [ ] **No progress bar.** Plain `logging.info` is emitted per file.
   `rich.progress` or `tqdm` would be friendlier but adds a dep.
 
+## MIMIC-IV / PhysioNet integration (deferred branch)
+
+A potential second source of distribution data is the MIT Laboratory
+for Computational Physiology **MIMIC-IV** database hosted on
+PhysioNet (currently
+[v2.2](https://physionet.org/content/mimiciv/2.2/)). It would let us
+ground several of the currently approximate / distorted tables
+(diagnosis frequencies, sequential within-patient patterns,
+length-of-stay, hospital-utilization × demographics) against a real
+ICU + inpatient cohort, rather than the limited DE-SynPUF subset.
+Important constraints that make this a separate branch of work rather
+than a quick win:
+
+- [ ] **Access requires a free PhysioNet credentialing course
+  (~40 min, MIT-offered).** Anyone contributing to this branch needs
+  to complete it; existing contributors who haven't, can't pull the
+  data. This is a real onboarding tax for software-engineer
+  contributors who don't otherwise need clinical-data training.
+- [ ] **License constraint propagates downstream.** Per the
+  PhysioNet Credentialed Health Data License, any model or dataset
+  *derived from* MIMIC-IV can only be redistributed back through
+  PhysioNet — not Zenodo, not GitHub release artifacts, not the open
+  Apache-2.0 channel this repo uses. Distributions baked from MIMIC
+  cannot be commingled with the open distribution set without
+  tainting the whole package.
+- [ ] **Implies a two-variant split.** A MIMIC-aware variant (output
+  destination: PhysioNet) and a MIMIC-free variant (current behavior,
+  open Apache-2.0 publication via Zenodo). Three sensible
+  architectural patterns to evaluate when this becomes active:
+  1. **Long-lived `mimic` git branch** that diverges only in its
+     `inputs/distributions/` content + a few loader paths. Cleanest
+     license boundary; ongoing merge cost from `main` to keep parity.
+  2. **Extension package** (e.g. `synthmed-mimic`) that depends on
+     `synthmed` and overrides specific `DistributionData` fields
+     with MIMIC-derived values. Keeps the core repo
+     license-uncontaminated; releases happen independently.
+  3. **Config-driven single repo** with a
+     `GenerationConfig.data_provenance` field gating which
+     distributions get loaded; users acknowledge the PhysioNet
+     licensing implications at config-construction time.
+  None of these solves the *publication-destination* gate by itself —
+  the license restriction is about where outputs land, not about how
+  the code is organized — so any approach also needs to surface that
+  constraint at output-write time.
+
 ## Repo / packaging
 
-- [ ] No tests yet. A first regression test should fix a seed, run the
-  pipeline against the smallest cohort, and snapshot a hash of each
-  output `.dat`.
+- [x] ~~No tests yet.~~ Two smoke tests under `tests/test_smoke.py`
+  cover pipeline completion (100 patients, fixed seed, asserts FTS↔DAT
+  pairing + non-empty outputs + row counts in plausible bands) and
+  bit-for-bit reproducibility across two seeded runs.
+- [ ] **Broader regression coverage.** Snapshot SHA-256 of each output
+  `.dat` from a known-good run into a checked-in fixture; assert
+  equality on subsequent runs. Catches accidental sampling-order
+  changes that the existing reproducibility test would miss across
+  refactors.
 - [ ] `dorieh` is listed as a PyPI dependency in `pyproject.toml`; if
   the published package name differs, the spec needs to switch to a
   direct VCS reference.

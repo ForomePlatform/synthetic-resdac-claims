@@ -46,6 +46,11 @@ class GenerationConfig:
     max_diag_columns: int = 25
     sampled_diag_columns: int = 10
 
+    seed: int | None = None
+    """If set, seeds Python ``random``, ``numpy.random``, and ``Faker`` at
+    the start of :func:`synthmed.pipeline.run` for reproducible output.
+    Leave ``None`` for fresh randomness each run."""
+
     def __post_init__(self) -> None:
         self.data_root = Path(self.data_root)
         self.distribution_dir = Path(self.distribution_dir)

@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import random
 import shutil
 from os import listdir
 from pathlib import Path
+
+import numpy as np
+from faker import Faker
 
 from synthmed.config import GenerationConfig
 from synthmed.distributions import DistributionData, load_distributions
@@ -15,6 +19,13 @@ from synthmed.internal_db import (
 )
 from synthmed.medpar import generate_medpar_internal_database
 from synthmed.year import generate_year_files
+
+
+def _seed_all_rngs(seed: int) -> None:
+    """Seed every randomness source the pipeline draws from."""
+    random.seed(seed)
+    np.random.seed(seed)
+    Faker.seed(seed)
 
 
 def discover_year_directories(
@@ -60,6 +71,9 @@ def run(
 
     Returns the discovered ``directory_map`` to make follow-up inspection easy.
     """
+    if config.seed is not None:
+        _seed_all_rngs(config.seed)
+
     if dist is None:
         dist = load_distributions(config.distribution_dir, config.sample_dir)
 

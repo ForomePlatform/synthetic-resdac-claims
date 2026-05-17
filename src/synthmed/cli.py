@@ -32,6 +32,8 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="Fraction of beneficiaries alive each year (default: 0.95).")
     g.add_argument("--initial-dob-start", type=int, default=1940)
     g.add_argument("--initial-dob-end", type=int, default=1950)
+    g.add_argument("--seed", type=int, default=None,
+                   help="If set, seed all RNGs for reproducible output.")
 
     d = sub.add_parser(
         "download-samples",
@@ -58,6 +60,7 @@ def main(argv: list[str] | None = None) -> int:
             alive_ratio=args.alive_ratio,
             initial_dob_start=args.initial_dob_start,
             initial_dob_end=args.initial_dob_end,
+            seed=args.seed,
         )
         run(config)
         return 0
