@@ -65,8 +65,7 @@ See [`docs/distributions/number_of_diagnoses.md`](docs/distributions/number_of_d
   re-identification risk (rare pairs of specific illnesses can be
   near-identifying); any data-derived table must go through
   documented anti-leakage noise before being shipped, matching the
-  pattern already used for [[state_error_medpar_rates.csv]] and
-  [[diag1.csv]].
+  pattern already used for [[state_error_medpar_rates.csv]].
 - [ ] **ICD-9 only; only 10 codes used per admission.** DE-SynPUF only
   exposes ICD-9 and only `ICD9_DGNS_CD_1..10`; columns `diag_11..diag_25`
   in the internal cohort are left as blank space. Modern Medicare uses
@@ -77,18 +76,11 @@ See [`docs/distributions/number_of_diagnoses.md`](docs/distributions/number_of_d
   joint-across-admissions item applies — any data-derived
   age/sex/region × diagnosis table must be passed through documented
   anti-leakage noise before publication.
-- [ ] **`diag1.csv` consumer decision is open.** The 4076-row primary-dx
-  marginal frequency table is read into `DistributionData.diag1` but no
-  active code path samples from it
-  ([`docs/distributions/diag1.md`](docs/distributions/diag1.md)).
-  Three options:
-  - *Drop* — remove the file and loader call; locks in DE-SynPUF-only,
-    `diag_1..diag_10` coverage with within-admission joint structure.
-  - *Restore fallback* — fill `diag_j` for `j ≤ number_of_diagnoses` by
-    independent draws from this table; recovers `diag_11..diag_25`
-    coverage at the cost of losing joint structure.
-  - *Hybrid* — `diag_1` from `diag1.csv`, secondary slots from a
-    conditional table (not yet built).
+- [x] ~~`diag1.csv` consumer decision is open.~~ **Resolved 2026-05-19**
+  by dropping the file: diagnosis sampling uses CMS DE-SynPUF rows
+  exclusively (`diag_1..diag_10` with within-admission joint structure).
+  The 4076-row primary-dx marginal frequency table and its loader call
+  have been removed from `synthmed.distributions`.
 - [ ] **Stale upstream note.** Original docs list
   `number_of_diagnoses.csv` as "Currently not in use"; the package does
   use it (just only to set the column value, not to truncate diags).
