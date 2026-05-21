@@ -10,15 +10,16 @@ Typical use::
     from synthmed import GenerationConfig, run
 
     run(GenerationConfig(
-        data_root=Path("input_files/data"),
-        distribution_dir=Path("input_files/distribution_data"),
-        sample_dir=Path("medicare_sample_data"),
+        data_root=Path("inputs/schemas"),
+        distribution_dir=Path("inputs/distributions"),
+        sample_dir=Path("inputs/samples"),
         output_dir=Path("output_dat_files"),
         total_people=1000,
+        seed=42,
     ))
-
-See ``docs-internal/Documentation.md`` for the underlying methodology.
 """
+
+from importlib.metadata import PackageNotFoundError, version
 
 from synthmed.config import GenerationConfig
 from synthmed.distributions import DistributionData, load_distributions
@@ -29,6 +30,10 @@ __all__ = [
     "DistributionData",
     "load_distributions",
     "run",
+    "__version__",
 ]
 
-__version__ = "0.1.0"
+try:
+    __version__ = version("synthmed")
+except PackageNotFoundError:
+    __version__ = "0.0.0+unknown"

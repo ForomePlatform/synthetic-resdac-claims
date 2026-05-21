@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "synthmed"
-version = "0.1.0"
+version = "0.1.1"
 description = "Synthetic ResDAC / Medicare claims generator producing FTS-compliant DAT files."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -38,7 +38,7 @@ dependencies = [
 
 [project.optional-dependencies]
 plot = ["matplotlib", "geopandas"]
-dev = ["jupyter", "ipykernel", "ruff", "pytest"]
+dev = ["jupyter", "ipykernel", "ruff", "pytest", "scipy>=1.10"]
 
 [project.scripts]
 synthmed = "synthmed.cli:main"
@@ -55,3 +55,6 @@ synthmed = ["py.typed"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
+markers = [
+    "statistical: distributional goodness-of-fit checks against the claimed sampling weights. Included in the default run; opt out with `pytest -m 'not statistical'`.",
+]

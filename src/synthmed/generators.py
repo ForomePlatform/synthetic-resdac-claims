@@ -1,9 +1,9 @@
-"""Low-level random value generators used by higher-level modules."""
+"""Low-level random value generators shared by the cohort and column modules."""
 
 from __future__ import annotations
 
 import string
-from typing import Iterable, Sequence
+from typing import Iterable
 
 import numpy as np
 import pandas as pd
@@ -11,41 +11,29 @@ import pandas as pd
 
 def random_char_gen(
     width: int,
-    row: int,
-    allowed_chars: Iterable[str] = string.ascii_uppercase,
-    weights: Sequence[float] | None = None,
+    n_rows: int,
+    alphabet: Iterable[str] = string.ascii_uppercase,
 ) -> list[str]:
-    """Generate ``row`` strings, each the concatenation of ``width`` symbols.
+    """Return ``n_rows`` strings, each formed by concatenating ``width`` draws from ``alphabet``.
 
-    Parameters
-    ----------
-    width:
-        Number of symbols drawn per output string.
-    row:
-        Number of strings to produce.
-    allowed_chars:
-        Pool of symbols to sample from. May be characters or fixed-length
-        tokens (e.g. ``["10","20","30"]``).
-    weights:
-        Optional sampling weights aligned with ``allowed_chars``. Currently
-        unused by ``np.random.choice`` here; preserved for API symmetry.
+    ``alphabet`` may be single characters (``string.ascii_uppercase``) or
+    multi-character tokens (e.g. ``["10", "20", "30"]``); the output strings
+    are just ``"".join(...)`` of the draws either way.
     """
     width = int(width)
-    row = int(row)
-    pool = list(allowed_chars)
-    drawn = np.random.choice(pool, size=(row, width))
-    return ["".join(r) for r in drawn]
+    n_rows = int(n_rows)
+    pool = list(alphabet)
+    drawn = np.random.choice(pool, size=(n_rows, width))
+    return ["".join(row) for row in drawn]
 
 
 def random_date_gen(
     start: pd.Timestamp,
     end: pd.Timestamp,
-    num_entries: int,
+    n: int,
 ) -> np.ndarray:
-    """Generate ``num_entries`` random ``CCYYMMDD`` date strings in ``[start, end)``."""
-    start_u = start.value // 10**9
-    end_u = end.value // 10**9
-    dates = pd.to_datetime(
-        np.random.randint(start_u, end_u, num_entries), unit="s"
-    )
+    """Return ``n`` random dates in ``[start, end)`` formatted as ``CCYYMMDD`` strings."""
+    start_s = start.value // 10**9
+    end_s = end.value // 10**9
+    dates = pd.to_datetime(np.random.randint(start_s, end_s, n), unit="s")
     return dates.strftime("%Y%m%d")

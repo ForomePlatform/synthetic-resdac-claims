@@ -1,12 +1,27 @@
 """Build and evolve the internal beneficiary cohort.
 
-The "internal database" is a Pandas DataFrame that holds the canonical
-beneficiary records (ID, location, demographics, MEDPAR record counts)
-used to keep generated FTS files consistent across years.
+The "cohort" (called the "internal database" in upstream documentation)
+is a single pandas ``DataFrame``, one row per synthetic beneficiary,
+that holds every attribute the per-column DAT generators read from:
+identity, geography, demographics, MEDPAR admission count, and any
+error flags from :mod:`synthmed.errors`.
+
+This cohort *is* the MBSF source data: there is one row per beneficiary
+and that row's columns are what get serialised into the MBSF
+fixed-width DAT files. It also seeds MEDPAR via
+:func:`synthmed.medpar.generate_medpar_internal_database`, which
+repeats each cohort row ``number_of_records`` times to make the
+per-admission frame.
+
+The cohort is created once for the first calendar year by
+:func:`generate_internal_database` and then advanced one calendar year
+at a time by :func:`increment_internal_database`. The actual on-disk
+write happens in :func:`synthmed.year.generate_year_files`.
 """
 
 from __future__ import annotations
 
+import logging
 import random
 
 import numpy as np
@@ -16,40 +31,60 @@ from synthmed.config import GenerationConfig
 from synthmed.distributions import DistributionData
 from synthmed.generators import random_char_gen, random_date_gen
 
+log = logging.getLogger(__name__)
 
-def generate_location(base: pd.DataFrame, dist: DistributionData) -> pd.DataFrame:
-    """Attach ID, ZIP/FIPS, SSA state and county codes to ``base``."""
-    num_people = base.shape[0]
-    base["zip4"] = ""
 
-    blocks = int(np.ceil(num_people / 1000))
-    block_prefixes = [random_char_gen(12, 1) for _ in range(blocks)]
-    prefixes = np.repeat(block_prefixes, 1000)[:num_people]
-    suffixes = np.tile(np.arange(1000), int(np.ceil(num_people / 1000)))[:num_people].astype(str)
+_ID_BLOCK_SIZE = 1000
+_ID_PREFIX_WIDTH = 12
+
+
+def mint_beneficiary_ids(n: int) -> list[str]:
+    """Return ``n`` 15-character synthetic beneficiary IDs.
+
+    IDs are minted in blocks of 1000 sharing a single 12-character
+    random prefix so they look like real CMS beneficiary IDs (which
+    cluster on enrolment-batch boundaries) while remaining cheap to
+    generate in bulk.
+    """
+    n_blocks = int(np.ceil(n / _ID_BLOCK_SIZE))
+    block_prefixes = [random_char_gen(_ID_PREFIX_WIDTH, 1) for _ in range(n_blocks)]
+    prefixes = np.repeat(block_prefixes, _ID_BLOCK_SIZE)[:n]
+    suffixes = np.tile(np.arange(_ID_BLOCK_SIZE), n_blocks)[:n].astype(str)
     suffixes = [s.zfill(3) for s in suffixes]
-    base["id"] = [p + s for p, s in zip(prefixes, suffixes)]
+    return [p + s for p, s in zip(prefixes, suffixes)]
 
-    base["zip4"] = dist.zip2fips2pop.sample(
+
+def generate_location(cohort: pd.DataFrame, dist: DistributionData) -> pd.DataFrame:
+    """Attach beneficiary ID, ZIP, FIPS, and SSA state/county codes to ``cohort``.
+
+    ZIPs are sampled with weights proportional to 2020 ZCTA population
+    so the cohort lands in plausible places. ZIPs that don't resolve to
+    a known FIPS or SSA county are dropped silently — see TODO.md for
+    the Connecticut planning-region edge case this exposes.
+    """
+    n = cohort.shape[0]
+
+    cohort["id"] = mint_beneficiary_ids(n)
+    cohort["zip4"] = dist.zip2fips2pop.sample(
         weights=dist.zip2fips2pop["POP"],
         replace=True,
-        n=num_people,
+        n=n,
     ).reset_index(drop=True)["zipcode"]
-    base["zip"] = base["zip4"].str.slice(0, 5)
+    cohort["zip"] = cohort["zip4"].str.slice(0, 5)
 
-    base = pd.merge(base, dist.zip2fips, how="left", left_on="zip", right_on="zipcode")
-    base = pd.merge(base, dist.fip2ssa, how="left", left_on="FIPS", right_on="fipscounty")
+    cohort = pd.merge(cohort, dist.zip2fips, how="left", left_on="zip", right_on="zipcode")
+    cohort = pd.merge(cohort, dist.fip2ssa, how="left", left_on="FIPS", right_on="fipscounty")
 
-    base["state_code"] = base["ssa_code"].str.slice(0, 2)
-    base["county_code"] = base["ssa_code"].str.slice(2, 5)
+    cohort["state_code"] = cohort["ssa_code"].str.slice(0, 2)
+    cohort["county_code"] = cohort["ssa_code"].str.slice(2, 5)
 
-    base = base.dropna()
-    base = base.drop_duplicates("id")
-    base = base.reset_index(drop=True)
-    return base
+    cohort = cohort.dropna()
+    cohort = cohort.drop_duplicates("id")
+    return cohort.reset_index(drop=True)
 
 
 def generate_demographic(
-    base: pd.DataFrame,
+    cohort: pd.DataFrame,
     dist: DistributionData,
     config: GenerationConfig,
     dob_year_start: int,
@@ -57,67 +92,79 @@ def generate_demographic(
     generate_dead: bool = False,
     death_year: int = 2013,
 ) -> pd.DataFrame:
-    """Attach birth date, death date, age, sex, race."""
-    num_people = base.shape[0]
+    """Attach ``birth_date``, ``death_date``, ``age``, ``sex``, ``race``.
+
+    When ``generate_dead`` is true, a small ``(1 - alive_ratio)`` fraction
+    of beneficiaries are killed off during ``death_year`` (used by the
+    initial-cohort build so the very first year has plausible mortality).
+    Otherwise everyone is left alive and the death-date column is the
+    blank-space sentinel.
+    """
+    n = cohort.shape[0]
 
     start_dob = pd.to_datetime(f"{dob_year_start}-01-01")
     end_dob = pd.to_datetime(f"{dob_year_end}-12-31")
-    base["birth_date"] = random_date_gen(start_dob, end_dob, num_people)
+    cohort["birth_date"] = random_date_gen(start_dob, end_dob, n)
 
-    base["death_date"] = " "
+    cohort["death_date"] = " "
     if generate_dead:
         start_dod = pd.to_datetime(f"{death_year}-01-01")
         end_dod = pd.to_datetime(f"{death_year}-12-31")
-        mask_alive = np.random.rand(num_people) < config.alive_ratio
-        base.loc[~mask_alive, "death_date"] = random_date_gen(
-            start_dod, end_dod, (~mask_alive).sum()
+        is_alive = np.random.rand(n) < config.alive_ratio
+        cohort.loc[~is_alive, "death_date"] = random_date_gen(
+            start_dod, end_dod, (~is_alive).sum()
         )
 
-    base["age"] = (
-        pd.to_datetime(base["death_date"], errors="coerce")
+    cohort["age"] = (
+        pd.to_datetime(cohort["death_date"], format="%Y%m%d", errors="coerce")
         .fillna(pd.Timestamp(f"{death_year}-12-31"))
-        - pd.to_datetime(base["birth_date"])
+        - pd.to_datetime(cohort["birth_date"], format="%Y%m%d")
     ).dt.days // 365
 
-    base["sex"] = random.choices(
+    cohort["sex"] = random.choices(
         dist.demographic["sex"]["values"],
-        k=num_people,
+        k=n,
         weights=dist.demographic["sex"]["weights"],
     )
-    base["race"] = random.choices(
+    cohort["race"] = random.choices(
         dist.demographic["race"]["values"],
-        k=num_people,
+        k=n,
         weights=dist.demographic["race"]["weights"],
     )
-    return base
+    return cohort
 
 
 def generate_diagnosis(
-    base: pd.DataFrame,
+    cohort: pd.DataFrame,
     dist: DistributionData,
     config: GenerationConfig,
 ) -> pd.DataFrame:
-    """Attach ``diag_1..diag_25`` columns sampled from the DE-SynPUF data."""
-    num_people = base.shape[0]
-    temp_sample = dist.de_sample.sample(num_people, ignore_index=True, replace=True)
+    """Attach ``diag_1..diag_max_diag_columns`` columns to ``cohort``.
+
+    The first ``config.sampled_diag_columns`` columns are filled from one
+    DE-SynPUF inpatient sample row per cohort row, preserving the
+    within-admission joint distribution of diagnosis codes; the remaining
+    slots (DE-SynPUF tops out at ten ICD-9 codes per admission) are left
+    as blank spaces.
+    """
+    n = cohort.shape[0]
+    sample = dist.de_sample.sample(n, ignore_index=True, replace=True)
+
     for i in range(config.max_diag_columns):
-        j = i + 1
-        col = f"diag_{j}"
+        col = f"diag_{i + 1}"
         if i < config.sampled_diag_columns:
-            base[col] = " "
-            base[col] = temp_sample[f"ICD9_DGNS_CD_{j}"]
-            base[col] = base[col].fillna(" ")
+            cohort[col] = sample[f"ICD9_DGNS_CD_{i + 1}"].fillna(" ")
         else:
-            base[col] = " "
-    return base
+            cohort[col] = " "
+    return cohort
 
 
-def generate_medpar_stats(base: pd.DataFrame, config: GenerationConfig) -> pd.DataFrame:
-    """Attach Poisson-distributed ``number_of_records`` per beneficiary."""
-    base["number_of_records"] = np.random.poisson(
-        config.average_medpar_records, base.shape[0]
+def generate_medpar_stats(cohort: pd.DataFrame, config: GenerationConfig) -> pd.DataFrame:
+    """Attach ``number_of_records`` — a Poisson-distributed per-beneficiary admission count."""
+    cohort["number_of_records"] = np.random.poisson(
+        config.average_medpar_records, cohort.shape[0]
     )
-    return base
+    return cohort
 
 
 def generate_internal_database(
@@ -129,75 +176,95 @@ def generate_internal_database(
     dist: DistributionData,
     config: GenerationConfig,
 ) -> pd.DataFrame:
-    """Create a fresh internal beneficiary database of (approximately) ``num_people``."""
-    base = pd.DataFrame()
-    base["index_dummy"] = range(num_people)
-    base["id"] = range(num_people)
-    base = generate_location(base, dist)
-    base = generate_demographic(
-        base, dist, config, dob_start, dob_end, generate_dead, death_year
-    )
-    base = generate_medpar_stats(base, config)
+    """Build a fresh internal database of (approximately) ``num_people`` rows.
 
-    base = base.dropna(subset=["ssa_code"])
-    base = base.reset_index(drop=True)
-    base["actual_id"] = base["id"]
-    return base
+    The actual row count is slightly less because :func:`generate_location`
+    drops ZIPs that don't resolve to an SSA county. ``actual_id`` is
+    pinned to the original ``id`` here so that subsequent merges
+    (e.g. cross-file lookups in :mod:`synthmed.year`) can reach the
+    original beneficiary identity even after later error-injection
+    rounds rotate ``id`` for orphan-admission rows.
+    """
+    cohort = pd.DataFrame({"index_dummy": range(num_people), "id": range(num_people)})
+    cohort = generate_location(cohort, dist)
+    cohort = generate_demographic(
+        cohort, dist, config, dob_start, dob_end, generate_dead, death_year
+    )
+    cohort = generate_medpar_stats(cohort, config)
+    cohort = cohort.dropna(subset=["ssa_code"]).reset_index(drop=True)
+    cohort["actual_id"] = cohort["id"]
+    return cohort
 
 
 def increment_internal_database(
-    base: pd.DataFrame,
+    cohort: pd.DataFrame,
     next_year: int | str,
     dist: DistributionData,
     config: GenerationConfig,
 ) -> pd.DataFrame:
-    """Advance the cohort one year forward.
+    """Advance the cohort by one calendar year.
 
-    - Drops beneficiaries that died last year.
-    - Generates fresh deaths for last year among survivors.
-    - Adds a small cohort of new 65-year-olds.
+    Order of operations matters and is:
+
+    1. Drop beneficiaries who already died in a previous year.
+    2. Mint a fresh delta cohort of new 65-year-olds (configurable rate).
+    3. Generate deaths for the surviving cohort during the elapsed year.
+    4. Increment ages of those who are still alive.
+    5. Re-draw MEDPAR admission counts for the survivors.
+    6. Zero out MEDPAR counts for the configured fraction of new
+       enrollees (mid-year enrollment lag).
+    7. Concatenate survivors and delta into the year's cohort.
     """
-    print("incrementing internal database")
     next_year_int = int(next_year)
+    last_year = next_year_int - 1
     dob_65_year = next_year_int - 65
 
-    new_people_num = int(
+    # (1) Drop the already-dead.
+    survivors = cohort.loc[cohort["death_date"] == " "].copy()
+
+    # (2) Mint new 65-year-olds.
+    n_new = int(
         np.floor(
             np.random.normal(
                 config.new_year_new_patients_mean,
                 config.new_year_new_patients_sd,
             )
-            * base.shape[0]
+            * cohort.shape[0]
         )
     )
-    print(new_people_num)
-
     delta = generate_internal_database(
-        new_people_num, dob_65_year, dob_65_year, False, next_year_int - 1, dist, config
+        n_new, dob_65_year, dob_65_year, False, last_year, dist, config
     )
-    print("after delta")
 
-    alive = base.loc[base["death_date"] == " "]
-    base = alive
-
-    start_dod = pd.to_datetime(f"{next_year_int - 1}-01-01")
-    end_dod = pd.to_datetime(f"{next_year_int - 1}-12-31")
-    mask_alive = np.random.rand(alive.shape[0]) < np.random.normal(
+    # (3) Kill off (1 - alive_ratio) of survivors during the elapsed year.
+    start_dod = pd.to_datetime(f"{last_year}-01-01")
+    end_dod = pd.to_datetime(f"{last_year}-12-31")
+    alive_ratio_jittered = np.random.normal(
         config.alive_ratio, config.alive_ratio * 0.1
     )
-    alive["death_date"] = " "
-    alive.loc[~mask_alive, "death_date"] = random_date_gen(
-        start_dod, end_dod, (~mask_alive).sum()
+    is_alive = np.random.rand(survivors.shape[0]) < alive_ratio_jittered
+    n_deaths = int((~is_alive).sum())
+    survivors["death_date"] = " "
+    survivors.loc[~is_alive, "death_date"] = random_date_gen(
+        start_dod, end_dod, n_deaths
     )
-    base.loc[base["death_date"] == " ", "death_date"] = alive["death_date"]
 
-    base.loc[base["death_date"] == " ", "age"] = alive["age"] + 1
+    # (4) Age survivors who didn't die this year.
+    still_alive = survivors["death_date"] == " "
+    survivors.loc[still_alive, "age"] = survivors.loc[still_alive, "age"] + 1
 
-    base = generate_medpar_stats(base, config)
+    # (5) Fresh MEDPAR admission counts for survivors.
+    survivors = generate_medpar_stats(survivors, config)
 
-    error_mask = np.random.rand(delta.shape[0]) < config.new_enrollment_no_medpar_rate
-    delta.loc[error_mask, "number_of_records"] = 0
+    # (6) Zero out MEDPAR for a fraction of new enrollees (enrollment lag).
+    no_medpar_mask = np.random.rand(delta.shape[0]) < config.new_enrollment_no_medpar_rate
+    delta.loc[no_medpar_mask, "number_of_records"] = 0
 
-    base = pd.concat([base, delta], ignore_index=True)
-    base = base.reset_index(drop=True)
-    return base
+    # (7) Concatenate.
+    next_cohort = pd.concat([survivors, delta], ignore_index=True).reset_index(drop=True)
+    log.info(
+        "Transition %d → %d: −%d deaths during %d, +%d new 65-year-olds → cohort %d → %d",
+        last_year, next_year_int, n_deaths, last_year, delta.shape[0],
+        cohort.shape[0], next_cohort.shape[0],
+    )
+    return next_cohort

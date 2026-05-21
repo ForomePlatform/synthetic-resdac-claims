@@ -86,9 +86,20 @@ See [`docs/distributions/demographic_distributions.md`](docs/distributions/demog
 ## Column generation
 
 - [ ] **`number_generation` width-6+ cap is `10*5 = 50`, not `10**5 = 100000`.**
-  See [`synthmed.columns.number_generation`](src/synthmed/columns.py).
+  See [`synthmed.columns._num_range`](src/synthmed/columns.py).
   Behavior preserved from the upstream prototype; the documented intent
   is the larger cap. Fix once we have a regression suite.
+- [ ] **MEDPAR death-date-verification switch is inverted vs. MBSF.** In
+  [`synthmed.columns._death_date_switch`](src/synthmed/columns.py),
+  MBSF emits `"V"` only on dead beneficiaries (intuitive), but MEDPAR
+  emits `"V"` on every admission row of every beneficiary *except* the
+  last-record row of alive ones — so dead beneficiaries also get `"V"`
+  on every record. Suspected typo in the upstream prototype's logical
+  expression. Decide between three fixes once we have a real-data
+  comparison: (a) match MBSF (death-date-bearing record only), (b)
+  invert to mean "this record's death date is valid", (c) leave as-is
+  if real MEDPAR actually carries `"V"` on most rows. Preserved during
+  the v0.2 refactor to keep DAT output unchanged.
 - [ ] **Most `CHAR` columns without explicit overrides are random digit
   strings.** Matches the upstream prototype but yields semantically
   meaningless values (e.g. HMO sub-indicators, payment codes). Each new
@@ -292,6 +303,18 @@ than a quick win:
   the license restriction is about where outputs land, not about how
   the code is organized — so any approach also needs to surface that
   constraint at output-write time.
+
+## Per-year file emission
+
+- [ ] **Fragile MEDPAR-last reordering.** `synthmed.year._reorder_medpar_last`
+  reverses the FTS list iff MEDPAR happens to come first in
+  `listdir()` order; otherwise it leaves the list alone. This works on
+  every supported FTS layout but breaks silently if a future layout
+  has MEDPAR neither first nor last (e.g. three MBSF + MEDPAR +
+  another MBSF). A robust fix is a sort that pushes MEDPAR to the end
+  while preserving MBSF relative order, but that would change reuse
+  semantics on existing layouts and needs a comparison run before
+  changing.
 
 ## Repo / packaging
 
