@@ -67,8 +67,10 @@ What's still alpha-grade:
   runs and produces structurally-correct files" is all we can claim.
 - A handful of known simplifications and small bugs are enumerated in
   [TODO.md](TODO.md) — notably the Connecticut planning-region silent
-  drop, and the decoupling between `number_of_diagnoses` and which
-  `diag_k` columns get filled.
+  drop, the absence of a joint diagnosis distribution across a
+  beneficiary's admissions, and that the FTS `DGNS_CD_CNT` slot is
+  filled with a uniform-random count uncorrelated with the populated
+  `diag_k` columns.
 
 ## Install
 

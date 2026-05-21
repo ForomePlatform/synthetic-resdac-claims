@@ -10,7 +10,6 @@ the package.
 |---|---|---|
 | `demographic_distributions.json` | Race + sex sampling weights | [`docs/distributions/demographic_distributions.md`](../../docs/distributions/demographic_distributions.md) |
 | `state_error_medpar_rates.csv` | Per-state MEDPAR id/DOB null-injection rates | [`docs/distributions/state_error_medpar_rates.md`](../../docs/distributions/state_error_medpar_rates.md) |
-| `number_of_diagnoses.csv` | Marginal distribution of diagnosis-count per MEDPAR row (k = 1..25) | [`docs/distributions/number_of_diagnoses.md`](../../docs/distributions/number_of_diagnoses.md) |
 | `ssa_fips_state_county_2025.csv` | NBER FIPS↔SSA county crosswalk (3283 rows, 8 columns) | [`docs/distributions/ssa_fips_state_county_2025.md`](../../docs/distributions/ssa_fips_state_county_2025.md) |
 | `zip2fips.csv` | ZIP→FIPS-county crosswalk via clauswilke/zipcodes (41,877 rows, 1:1 ZIP→FIPS) | [`docs/distributions/zip2fips.md`](../../docs/distributions/zip2fips.md) |
 | `DECENNIALDHC2020.P1-Data.csv` | 2020 US Census ZCTA total population (table P1, var `P1_001N`); used as ZIP sampling weights | [`docs/distributions/DECENNIALDHC2020.P1-Data.md`](../../docs/distributions/DECENNIALDHC2020.P1-Data.md) |

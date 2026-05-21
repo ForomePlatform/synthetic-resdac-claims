@@ -41,17 +41,18 @@ See [`docs/distributions/demographic_distributions.md`](docs/distributions/demog
 
 ## Diagnosis codes
 
-See [`docs/distributions/number_of_diagnoses.md`](docs/distributions/number_of_diagnoses.md).
-
-- [ ] **`number_of_diagnoses` value is not enforced on `diag_k`
-  columns.** `synthmed.internal_db.generate_diagnosis` samples a count
-  `k` from the distribution and writes it to the
-  `number_of_diagnoses` column, but `diag_1..diag_10` are filled
-  regardless and `diag_(k+1)..diag_10` are not blanked. Near-free fix.
-- [ ] **`number_of_diagnoses.csv` shape is partly artificial.** The
-  `k=18` bump and the `k=25` right-tail spike reflect distortion +
-  capping, not a real observed mode. The file is approximate and
-  intentionally distorted; not cited in the published pipeline papers.
+- [x] ~~`number_of_diagnoses` value is not enforced on `diag_k` columns
+  and the count column is itself dead.~~ **Resolved 2026-05-19** by
+  dropping `number_of_diagnoses.csv` end-to-end. Investigation showed
+  the loaded distribution populated a `number_of_diagnoses` column on
+  the in-memory cohort that no downstream code path ever read, and the
+  FTS slots that should have carried the count (`DGNS_CD_CNT`,
+  `POA_DGNS_CD_CNT`, `DGNS_E_CD_CNT`, `POA_DGNS_E_CD_CNT`) fell through
+  to the default uniform-random `NUM` generator. A future fix is to
+  add a `DGNSCNT`/`DGNS_CD_CNT` override in
+  [`synthmed.columns.number_generation`](src/synthmed/columns.py) that
+  emits `min(k, n_filled_diags)` so the count matches the actual
+  populated `diag_k` slots.
 - [ ] **No joint distribution across admissions.** `diag_1..diag_25` for
   one admission are drawn jointly from a single CMS DE-SynPUF row, but
   a patient's subsequent admissions are independent of their prior
@@ -81,9 +82,6 @@ See [`docs/distributions/number_of_diagnoses.md`](docs/distributions/number_of_d
   exclusively (`diag_1..diag_10` with within-admission joint structure).
   The 4076-row primary-dx marginal frequency table and its loader call
   have been removed from `synthmed.distributions`.
-- [ ] **Stale upstream note.** Original docs list
-  `number_of_diagnoses.csv` as "Currently not in use"; the package does
-  use it (just only to set the column value, not to truncate diags).
 
 ## Column generation
 

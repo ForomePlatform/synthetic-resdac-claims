@@ -100,11 +100,6 @@ def generate_diagnosis(
     """Attach ``diag_1..diag_25`` columns sampled from the DE-SynPUF data."""
     num_people = base.shape[0]
     temp_sample = dist.de_sample.sample(num_people, ignore_index=True, replace=True)
-    base["number_of_diagnoses"] = random.choices(
-        dist.num_diag["number of diagnoses"],
-        k=num_people,
-        weights=dist.num_diag["share_of_rows"],
-    )
     for i in range(config.max_diag_columns):
         j = i + 1
         col = f"diag_{j}"

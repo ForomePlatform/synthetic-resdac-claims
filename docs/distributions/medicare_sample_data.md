@@ -98,7 +98,6 @@ raises :class:`synthmed.samples.OfflineError` rather than calling out.
   `ICD9_DGNS_CD_1..10`; that's the structural reason
   `synthmed.internal_db.generate_diagnosis` only populates
   `diag_1..diag_10` and leaves `diag_11..diag_25` blank.
-  See also [`number_of_diagnoses.md`](number_of_diagnoses.md).
 - **2008–2010 vintage.** Predates ICD-10 transition (Oct 2015) and
   recent Medicare population shifts.
 - **Synthetic, not real.** DE-SynPUF preserves marginal and some joint

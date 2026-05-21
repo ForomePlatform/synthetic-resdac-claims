@@ -24,7 +24,6 @@ class DistributionData:
 
     demographic: dict[str, Any]
     state_error_medpar: pd.DataFrame
-    num_diag: pd.DataFrame
     fip2ssa: pd.DataFrame
     zip2fips: pd.DataFrame
     zip2fips2pop: pd.DataFrame
@@ -102,17 +101,12 @@ def load_distributions(
         distribution_dir / "state_error_medpar_rates.csv"
     )
 
-    num_diag = pd.read_csv(
-        distribution_dir / "number_of_diagnoses.csv", delimiter="\t"
-    )
-
     fip2ssa, zip2fips, zip2fips2pop = _build_zip2fips2pop(distribution_dir)
     de_sample = _load_de_sample(sample_dir)
 
     return DistributionData(
         demographic=demographic,
         state_error_medpar=state_error_medpar,
-        num_diag=num_diag,
         fip2ssa=fip2ssa,
         zip2fips=zip2fips,
         zip2fips2pop=zip2fips2pop,
