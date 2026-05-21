@@ -133,12 +133,15 @@ this block is rendered automatically by GitHub.
 flowchart TD
     %% ---- inputs ----
     cfg[/GenerationConfig/]
-    dist[("DistributionData<br/>crosswalks + DE-SynPUF samples")]
+    geo[("Location crosswalks<br/>ZIP &harr; FIPS &harr; SSA<br/>+ 2020 ZCTA population")]
+    popref[("Demographic &amp; error reference<br/>race &amp; sex sampling weights<br/>+ state-correlated MEDPAR error rates")]
+    desynpuf[("CMS DE-SynPUF<br/>inpatient samples<br/>(joint diagnosis structure)")]
     fts[/"FTS schemas<br/>inputs/schemas/&lt;cohort&gt;/&lt;year&gt;/"/]
 
     %% ---- initial cohort build ----
     cfg --> mint
-    dist --> loc
+    geo --> loc
+    popref --> demo
 
     subgraph build["<b>generate_internal_database</b>"]
         direction TB
@@ -152,7 +155,7 @@ flowchart TD
 
     %% ---- MEDPAR expansion ----
     coh --> rep
-    dist --> dx
+    desynpuf --> dx
 
     subgraph expand["<b>generate_medpar_internal_database</b>"]
         direction TB
@@ -178,21 +181,24 @@ flowchart TD
     mbsfRender --> outMBSF[/"output/&lt;cohort&gt;/&lt;year&gt;/<br/>mbsf_*.dat"/]
     medparRender --> outMEDPAR[/"output/&lt;cohort&gt;/&lt;year&gt;/<br/>medpar_*.dat"/]
 
-    %% ---- year transition (cycle back to cohort) ----
+    %% ---- year transition ----
     coh --> dropDead
 
-    subgraph incr["<b>increment_internal_database</b> + error injection"]
+    subgraph incr["<b>increment_internal_database</b>"]
         direction TB
         dropDead["drop already-dead"]
-        dropDead --> deltaNew["mint delta cohort<br/><i>(generate_internal_database called<br/>recursively for new 65-year-olds)</i>"]
+        dropDead --> deltaNew["mint delta cohort<br/><i>(generate_internal_database again<br/>for new 65-year-olds)</i>"]
         deltaNew --> killSome["kill 1-alive_ratio<br/>of survivors during year Y"]
         killSome --> ageUp["age survivors +1"]
         ageUp --> mstat2["generate_medpar_stats<br/>for survivors"]
         mstat2 --> concat["concat survivors + delta"]
-        concat --> err1["generate_internal_errors<br/><i>race / DOB / missing-MEDPAR drift</i>"]
     end
 
-    err1 -. "re-derive medpar; then<br/>generate_internal_medpar_errors<br/>(state-correlated nulls)" .-> coh
+    concat --> err1["generate_internal_errors<br/><i>race / DOB / missing-MEDPAR drift</i>"]
+    err1 --> reexp["generate_medpar_internal_database<br/><i>(re-derive medpar from updated cohort)</i>"]
+    reexp --> err2["generate_internal_medpar_errors<br/><i>state-correlated BENE_ID / birth_date nulls</i>"]
+    popref -.-> err2
+    err2 -. "year Y+1 cohort" .-> coh
 ```
 
 The pipeline holds two in-memory pandas frames per calendar year and
