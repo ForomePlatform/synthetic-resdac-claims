@@ -14,6 +14,8 @@ import pandas as pd
 
 from synthmed.generators import random_char_gen, random_date_gen
 
+from typing import Iterable, Sequence
+
 
 def number_generation(
     column_width: float,
@@ -77,6 +79,43 @@ def date_generation(
     return values, "%s"
 
 
+
+def _build_buyhmo_sequence(
+    n: int,
+    dominant_code: str,
+    dominant_prob: float,
+    secondary_code: str,
+    secondary_prob: float,
+    markov_states,
+) -> np.ndarray:
+    """Per-beneficiary 12-month coverage-indicator sequences.
+
+    ``dominant_prob`` of beneficiaries get a flat 12-month pattern of
+    ``dominant_code``; ``secondary_prob`` get a flat pattern of
+    ``secondary_code``; the remainder follow a sticky Markov walk over
+    ``markov_states``.
+    """
+    states = np.asarray(markov_states)
+    seq = np.empty((n, 12), dtype="U1")
+    r = np.random.rand(n)
+
+    seq[r < dominant_prob] = dominant_code
+    cutoff = dominant_prob + secondary_prob
+    seq[(r >= dominant_prob) & (r < cutoff)] = secondary_code
+
+    markov_rows = np.where(r >= cutoff)[0]
+    if markov_rows.size:
+        k = states.size
+        trans = np.full((k, k), 0.005 / (k - 1))
+        np.fill_diagonal(trans, 0.995)
+        for row in markov_rows:
+            current = np.random.randint(k)
+            for t in range(12):
+                seq[row, t] = states[current]
+                current = np.random.choice(k, p=trans[current])
+    return seq
+
+
 def char_generation(
     column_name: str,
     column_width: int,
@@ -119,10 +158,22 @@ def char_generation(
         values = underlying[f"diag_{m.group(1)}"]
     elif "Claim Type" in column_long:
         values = random_char_gen(1, n, ["10", "20", "30", "60", "61", "62", "63", "64"])
+
     elif "Buy-In Indicator" in column_long:
-        values = random_char_gen(1, n, ["0", "1", "2", "3", "A", "B", "C"])
+        month_idx = int(column_name[-2:]) - 1
+        seq = underlying.attrs.get("_buyIn_seq")
+        if seq is None or seq.shape[0] != n:
+            seq = _build_buyhmo_sequence(n, "3", 0.765, "C", 0.20, ["0", "1", "2", "A", "B"])
+            underlying.attrs["_buyIn_seq"] = seq
+        values = pd.Series(seq[:, month_idx], index=underlying.index)
     elif "HMO Indicator" in column_long:
-        values = random_char_gen(1, n, ["0", "1", "2", "4", "A", "B", "C"])
+        month_idx = int(column_name[-2:]) - 1
+        seq = underlying.attrs.get("_hmo_seq")
+        if seq is None or seq.shape[0] != n:
+            seq = _build_buyhmo_sequence(n, "0", 0.69, "C", 0.30, ["1", "2", "4"])
+            underlying.attrs["_hmo_seq"] = seq
+        values = pd.Series(seq[:, month_idx], index=underlying.index)
+
     else:
         values = random_char_gen(column_width, n, string.digits)
     return values, "%s"
