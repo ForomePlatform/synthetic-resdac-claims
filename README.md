@@ -135,7 +135,7 @@ flowchart TD
     cfg[/GenerationConfig/]
     geo[("Location crosswalks<br/>ZIP &harr; FIPS &harr; SSA<br/>+ 2020 ZCTA population")]
     popref[("Demographic &amp; error reference<br/>race &amp; sex sampling weights<br/>+ state-correlated MEDPAR error rates")]
-    desynpuf[("CMS DE-SynPUF<br/>inpatient samples<br/>(joint diagnosis structure)")]
+    desynpuf[("CMS DE-SynPUF<br/>inpatient samples + beneficiary demographics<br/>(stratified trajectories: bene-keyed history,<br/>indexed by age band &times; sex &times; state)")]
     fts[/"FTS schemas<br/>inputs/schemas/&lt;cohort&gt;/&lt;year&gt;/"/]
 
     %% ---- initial cohort build ----
@@ -161,7 +161,7 @@ flowchart TD
         direction TB
         rep["reindex.repeat by<br/>number_of_records"]
         rep --> orph["_inject_orphan_ids<br/><i>~1% fresh BENE_IDs</i>"]
-        orph --> dx["generate_diagnosis<br/><i>DE-SynPUF row per admission</i>"]
+        orph --> dx["generate_diagnosis<br/><i>per synthetic bene: sample 1 DE-SynPUF bene<br/>matching (age band, sex, state); replay their<br/>admissions across the synthetic bene's k rows</i>"]
     end
 
     dx --> med[("<b>medpar</b><br/>1 row / admission<br/><i>= MEDPAR source data</i>")]
@@ -224,10 +224,17 @@ walks them through four steps:
    death-date can land on a single row), then `_inject_orphan_ids`
    rewrites BENE_ID on roughly `config.orphan_admission_rate` of
    admissions to fresh, never-enrolled IDs so downstream QC sees
-   plausible orphan-admission counts. `generate_diagnosis` samples one
-   CMS DE-SynPUF inpatient row per admission to populate
-   `diag_1..diag_10` with their original within-admission joint
-   structure. The result is the **medpar** frame.
+   plausible orphan-admission counts. `generate_diagnosis` then does
+   **stratified trajectory replay**: for each synthetic beneficiary it
+   samples one DE-SynPUF beneficiary from the matching
+   `(age band, sex, state)` stratum and replays *that* DE-SynPUF
+   beneficiary's actual admission diagnoses across the synthetic
+   beneficiary's `k` admissions. This preserves both the
+   within-admission joint structure (whole `diag_1..diag_10` rows
+   sampled together) and the across-admission joint structure (chronic
+   conditions stay correlated within a beneficiary's year), while
+   matching the synthetic beneficiary's demographics. The result is
+   the **medpar** frame.
 
 3. **Emit the year's DAT files** — `generate_year_files`. For each
    `*.fts` schema in the year directory, picks `medpar` if the
@@ -279,8 +286,11 @@ The default `pytest` run covers everything:
 * **Statistical** (`tests/test_statistical.py`) — builds N≈10 000
   cohorts and checks that the race/sex marginals, the configured
   orphan-admission rate, the configured error-injection rates, the
-  per-state MEDPAR error rates, and the year-to-year cohort-evolution
-  invariants all match what `synthmed` claims to produce.
+  per-state MEDPAR error rates, the year-to-year cohort-evolution
+  invariants, and the diagnosis-trajectory contract (every emitted
+  `diag_1..diag_10` row is a verbatim DE-SynPUF inpatient row, and a
+  synthetic beneficiary's multiple admissions all trace to a single
+  DE-SynPUF beneficiary) all match what `synthmed` claims to produce.
 
 Both suites need the DE-SynPUF samples present under `inputs/samples/`;
 run `synthmed download-samples` first if necessary.

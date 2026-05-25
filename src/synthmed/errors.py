@@ -21,20 +21,30 @@ from synthmed.distributions import DistributionData
 log = logging.getLogger(__name__)
 
 
-# DOB drift is sampled as a sum of five independent Poisson layers, each
-# scaled to a different temporal scale (days / few days / weeks / month
-# / year). This mirrors the empirical shape of DOB-encoding errors in
-# real Medicare data: most are off by one or two days (transposed digit),
-# fewer by a week or so (month-edge confusion), and a long tail are
-# off by months or a full year (year-typo). Each layer contributes a
-# signed Poisson-distributed offset in days; the total is the sum.
-_DOB_OFFSET_LAYERS: tuple[tuple[int, float], ...] = (
-    # (day-scale, mean): scale * Poisson(mean) days, randomly signed.
-    (1, 1.0),     # ~1 day off (digit transposition)
-    (3, 0.2),     # ~few days off
-    (10, 0.35),   # ~week off
-    (30, 0.05),   # ~month off
-    (365, 0.005), # ~year off (year-typo)
+# DOB-encoding errors in real Medicare data cluster cleanly at month
+# boundaries: a "wrong month, right day" mistake is a single-character
+# error in one field, far more common than mistakes that get both the
+# month AND the day wrong. We model this as a mixture of mutually
+# exclusive error MODES rather than a sum of additive layers, so that
+# a 60-day error (= 2 months, single-character month typo) is more
+# common than a 40-day error (which requires both month and day to be
+# off). Each affected beneficiary gets exactly one mode drawn from
+# the mixture.
+#
+# Each mode entry is (name, weight, scale, lambda_offset):
+#   total_offset_days = sign * scale * (1 + Poisson(lambda_offset))
+# where (1 + Poisson) guarantees a non-zero offset, ``sign`` is ±1, and
+# ``combined`` overlays a small day-scale offset on top of a month-
+# scale offset to model the rare "both wrong" case.
+_DOB_ERROR_MODE_MONTH = "month_off"
+_DOB_ERROR_MODE_DAY = "day_off"
+_DOB_ERROR_MODE_YEAR = "year_off"
+_DOB_ERROR_MODE_COMBINED = "combined"
+_DOB_ERROR_MODES: tuple[tuple[str, float], ...] = (
+    (_DOB_ERROR_MODE_MONTH,    0.55),  # ±30, ±60, ±90 days …
+    (_DOB_ERROR_MODE_DAY,      0.30),  # ±1 to ~5 days
+    (_DOB_ERROR_MODE_YEAR,     0.05),  # ±365, ±730 days …
+    (_DOB_ERROR_MODE_COMBINED, 0.10),  # month-scale + day-scale (rare)
 )
 
 
@@ -86,25 +96,47 @@ def generate_internal_errors(
 
 
 def _sample_dob_offsets(n: int) -> np.ndarray:
-    """Return ``n`` randomly-signed Poisson-mixture day offsets as ``timedelta64[ns]``.
+    """Return ``n`` randomly-signed DOB error offsets as ``timedelta64[ns]``.
 
-    Sums :data:`_DOB_OFFSET_LAYERS` to model real DOB-encoding errors,
-    then guarantees every returned offset is non-zero so a flagged row
-    always moves at least one day (otherwise a 99 %-probability zero
-    from the smallest layer would make the "error" invisible).
+    For each of the ``n`` flagged beneficiaries, draws one error mode
+    from :data:`_DOB_ERROR_MODES`, then samples the magnitude in that
+    mode. Modes are mutually exclusive, so month-scale errors land
+    cleanly on ±30, ±60, ±90 … while day-scale errors stay within a
+    few days; the small ``combined`` weight produces the rare "both
+    month and day wrong" outcomes that fill in the gaps between month
+    boundaries. Every returned offset is non-zero (the magnitude
+    formula uses ``1 + Poisson(…)``).
     """
     days = np.zeros(n, dtype=np.int64)
-    for scale, mean in _DOB_OFFSET_LAYERS:
-        sign = 2 * np.random.randint(0, 2, n) - 1
-        days += scale * np.random.poisson(mean, n) * sign
-
-    still_zero = days == 0
-    n_zero = int(still_zero.sum())
-    if n_zero:
-        sign = 2 * np.random.randint(0, 2, n_zero) - 1
-        days[still_zero] = (1 + np.random.poisson(0.2, n_zero)) * sign
-
+    mode_indices = np.random.choice(
+        len(_DOB_ERROR_MODES),
+        size=n,
+        p=np.array([w for _, w in _DOB_ERROR_MODES]),
+    )
+    for i, (mode_name, _) in enumerate(_DOB_ERROR_MODES):
+        mask = mode_indices == i
+        k = int(mask.sum())
+        if k == 0:
+            continue
+        days[mask] = _draw_mode(mode_name, k)
     return pd.to_timedelta(days, unit="D").to_numpy()
+
+
+def _draw_mode(mode: str, k: int) -> np.ndarray:
+    """Sample ``k`` signed day offsets for a single error mode."""
+    sign = 2 * np.random.randint(0, 2, k) - 1
+    if mode == _DOB_ERROR_MODE_MONTH:
+        return 30 * (1 + np.random.poisson(1.0, k)) * sign
+    if mode == _DOB_ERROR_MODE_DAY:
+        return (1 + np.random.poisson(1.5, k)) * sign
+    if mode == _DOB_ERROR_MODE_YEAR:
+        return 365 * (1 + np.random.poisson(0.5, k)) * sign
+    if mode == _DOB_ERROR_MODE_COMBINED:
+        # Month-scale shift plus a small day-scale offset, signed together.
+        month_part = 30 * (1 + np.random.poisson(1.0, k))
+        day_part = 1 + np.random.poisson(1.5, k)
+        return (month_part + day_part) * sign
+    raise ValueError(f"Unknown DOB error mode {mode!r}")
 
 
 def generate_internal_medpar_errors(

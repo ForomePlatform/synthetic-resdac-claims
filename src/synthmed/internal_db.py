@@ -28,7 +28,7 @@ import numpy as np
 import pandas as pd
 
 from synthmed.config import GenerationConfig
-from synthmed.distributions import DistributionData
+from synthmed.distributions import DesynpufTrajectories, DistributionData, age_band
 from synthmed.generators import random_char_gen, random_date_gen
 
 log = logging.getLogger(__name__)
@@ -135,28 +135,92 @@ def generate_demographic(
 
 
 def generate_diagnosis(
-    cohort: pd.DataFrame,
+    medpar: pd.DataFrame,
     dist: DistributionData,
     config: GenerationConfig,
 ) -> pd.DataFrame:
-    """Attach ``diag_1..diag_max_diag_columns`` columns to ``cohort``.
+    """Attach ``diag_1..diag_max_diag_columns`` columns to ``medpar`` via stratified trajectory replay.
 
-    The first ``config.sampled_diag_columns`` columns are filled from one
-    DE-SynPUF inpatient sample row per cohort row, preserving the
-    within-admission joint distribution of diagnosis codes; the remaining
-    slots (DE-SynPUF tops out at ten ICD-9 codes per admission) are left
-    as blank spaces.
+    Each synthetic beneficiary in ``medpar`` is matched to a DE-SynPUF
+    beneficiary from the same ``(age_band, sex, state)`` stratum, and
+    that DE-SynPUF beneficiary's actual inpatient admission diagnoses
+    are sampled (without replacement when possible) to fill the
+    synthetic beneficiary's ``k`` admissions. This preserves both the
+    within-admission joint structure (whole ``diag_1..diag_10`` rows
+    drawn together) and the across-admission joint structure (a single
+    DE-SynPUF beneficiary's chronic-condition trajectory shapes all of
+    one synthetic beneficiary's admissions for the year).
+
+    Stratum fallback when an exact (age_band, sex, state) cell is
+    empty: try (age_band, sex) ignoring state, then (age_band) ignoring
+    sex, then the global pool of benes with ≥ 1 admission. State-level
+    cells are usually fine; small-state fallbacks happen on a few-%
+    of beneficiaries at developer-laptop cohort sizes.
+
+    Columns ``diag_(sampled_diag_columns + 1)..diag_max_diag_columns``
+    are left as blank space because DE-SynPUF caps inpatient diagnoses
+    at ten ICD-9 codes per admission.
     """
-    n = cohort.shape[0]
-    sample = dist.de_sample.sample(n, ignore_index=True, replace=True)
+    n = medpar.shape[0]
+    diag_block = np.full((n, 10), " ", dtype=object)
+    desynpuf = dist.desynpuf
+
+    # Iterate unique synthetic beneficiaries in insertion order (the
+    # natural order of medpar after reindex.repeat).
+    grouped = medpar.groupby("id", sort=False)
+    for bene_id, row_idx in grouped.indices.items():
+        first = medpar.iloc[row_idx[0]]
+        stratum = (
+            age_band(int(first["age"])),
+            _map_sex_to_desynpuf(int(first["sex"])),
+            str(first["state_code"]),
+        )
+        pool = _stratum_pool(desynpuf, stratum)
+        desynpuf_id = np.random.choice(pool)
+        adm = desynpuf.admissions_by_bene[desynpuf_id].diag_codes
+        n_real = adm.shape[0]
+        k = len(row_idx)
+        replace = k > n_real
+        sampled = np.random.choice(n_real, size=k, replace=replace)
+        diag_block[row_idx] = adm[sampled]
 
     for i in range(config.max_diag_columns):
         col = f"diag_{i + 1}"
         if i < config.sampled_diag_columns:
-            cohort[col] = sample[f"ICD9_DGNS_CD_{i + 1}"].fillna(" ")
+            medpar[col] = diag_block[:, i]
         else:
-            cohort[col] = " "
-    return cohort
+            medpar[col] = " "
+    return medpar
+
+
+def _map_sex_to_desynpuf(synth_sex: int) -> int:
+    """Map synthmed's {0, 1, 2} sex codes to DE-SynPUF's {1, 2}.
+
+    Synthmed uses 0 = Unknown, 1 = Male, 2 = Female (RTI convention);
+    DE-SynPUF has only 1 = Male, 2 = Female. We send the rare
+    Unknown stratum to Male (≈ 0.1 % of the cohort, so the bias is
+    negligible) and let the stratum-fallback chain coarsen further if
+    needed.
+    """
+    return 1 if synth_sex == 0 else synth_sex
+
+
+def _stratum_pool(desynpuf: DesynpufTrajectories, stratum: tuple[str, int, str]) -> np.ndarray:
+    """Return the DE-SynPUF bene-ID pool for a stratum, falling back coarser if empty."""
+    band, sex, state = stratum
+    pool = desynpuf.bene_ids_by_stratum.get((band, sex, state))
+    if pool is not None and len(pool):
+        return pool
+    # Fall back to (age_band, sex) across all states.
+    matches = [v for (b, s, _), v in desynpuf.bene_ids_by_stratum.items() if b == band and s == sex]
+    if matches:
+        return np.concatenate(matches)
+    # Fall back to age_band only.
+    matches = [v for (b, _, _), v in desynpuf.bene_ids_by_stratum.items() if b == band]
+    if matches:
+        return np.concatenate(matches)
+    # Last resort: the global pool.
+    return np.concatenate(list(desynpuf.bene_ids_by_stratum.values()))
 
 
 def generate_medpar_stats(cohort: pd.DataFrame, config: GenerationConfig) -> pd.DataFrame:

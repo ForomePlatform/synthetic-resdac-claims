@@ -271,6 +271,125 @@ def test_year_evolution_invariants(dist, config_factory):
 # ---------------------------------------------------------------------------
 
 
+def test_diagnosis_rows_are_verbatim_from_desynpuf(dist, config_factory):
+    """Every synthetic MEDPAR diag_1..diag_10 row is a verbatim copy of some real DE-SynPUF admission row.
+
+    This is the construction guarantee of trajectory replay: synthmed
+    samples whole DE-SynPUF inpatient rows, so every emitted row must
+    have an exact match in DE-SynPUF (modulo blank padding from
+    samples with fewer than ten codes).
+    """
+    _seed(48)
+    from synthmed.internal_db import generate_internal_database
+    from synthmed.medpar import generate_medpar_internal_database
+
+    config = config_factory(
+        total_people=500, average_medpar_records=1.5,
+        orphan_admission_rate=0.0,
+    )
+    cohort = generate_internal_database(
+        500, config.initial_dob_start, config.initial_dob_end,
+        generate_dead=False, death_year=2010, dist=dist, config=config,
+    )
+    cohort, medpar = generate_medpar_internal_database(cohort, dist, config)
+
+    real_rows = set()
+    for bene_adm in dist.desynpuf.admissions_by_bene.values():
+        for row in bene_adm.diag_codes:
+            real_rows.add(tuple(row))
+
+    diag_cols = [f"diag_{i}" for i in range(1, 11)]
+    synth_rows = [tuple(r) for r in medpar[diag_cols].to_numpy()]
+    missing = [r for r in synth_rows if r not in real_rows]
+    assert not missing, (
+        f"{len(missing)} of {len(synth_rows)} synthetic diag rows not in DE-SynPUF; "
+        f"first: {missing[0]}"
+    )
+
+
+def test_diagnosis_shared_within_synthetic_beneficiary(dist, config_factory):
+    """A synthetic bene with k>1 admissions: those k rows come from one DE-SynPUF bene's history.
+
+    Checks the across-admission joint contract: for every synthetic
+    beneficiary whose MEDPAR contains 2+ admissions, all of that
+    beneficiary's diag rows must trace to a single DE-SynPUF
+    beneficiary -- i.e. there exists at least one DESYNPUF_ID whose
+    admission set contains every one of those rows.
+    """
+    _seed(49)
+    from synthmed.internal_db import generate_internal_database
+    from synthmed.medpar import generate_medpar_internal_database
+
+    config = config_factory(
+        total_people=500, average_medpar_records=3.0,  # force several multi-admission benes
+        orphan_admission_rate=0.0,
+    )
+    cohort = generate_internal_database(
+        500, config.initial_dob_start, config.initial_dob_end,
+        generate_dead=False, death_year=2010, dist=dist, config=config,
+    )
+    cohort, medpar = generate_medpar_internal_database(cohort, dist, config)
+
+    # Build a row → set of source DE-SynPUF bene IDs index, for fast intersection.
+    row_to_benes: dict[tuple, set[str]] = {}
+    for bene_id, bene_adm in dist.desynpuf.admissions_by_bene.items():
+        for row in bene_adm.diag_codes:
+            row_to_benes.setdefault(tuple(row), set()).add(bene_id)
+
+    diag_cols = [f"diag_{i}" for i in range(1, 11)]
+    violations = []
+    for synth_id, group in medpar.groupby("id", sort=False):
+        if len(group) < 2:
+            continue
+        rows = [tuple(r) for r in group[diag_cols].to_numpy()]
+        # Intersection of source-bene sets across the synthetic bene's k rows.
+        common = row_to_benes.get(rows[0], set()).copy()
+        for r in rows[1:]:
+            common &= row_to_benes.get(r, set())
+            if not common:
+                break
+        if not common:
+            violations.append((synth_id, len(rows)))
+
+    assert not violations, (
+        f"{len(violations)} synthetic benes have admissions that can't trace to one DE-SynPUF bene"
+    )
+
+
+def test_dob_error_shape_peaks_at_month_boundaries(dist, config_factory):
+    """DOB errors cluster at multiples of 30 days (month-typos), not in between.
+
+    A 60-day error (= 2 months) is a single-character mistake in the
+    month field and is empirically more common than a 40-day error
+    (which requires both the month and the day to be wrong). Lock
+    that ordering in so the additive-Poisson regression from the
+    pre-2026-05-21 model doesn't sneak back.
+    """
+    _seed(50)
+    from synthmed.errors import _sample_dob_offsets
+
+    days = np.abs(pd.to_timedelta(_sample_dob_offsets(50_000)).days.to_numpy())
+
+    def density_at(d: int) -> int:
+        return int((days == d).sum())
+
+    d30, d60, d90 = density_at(30), density_at(60), density_at(90)
+    d40, d50, d70, d80 = density_at(40), density_at(50), density_at(70), density_at(80)
+
+    # Each month boundary should clearly beat each in-between value.
+    for boundary in (d30, d60, d90):
+        assert boundary > 4 * max(d40, d50, d70, d80), (
+            f"Month-boundary density {boundary} not >> off-boundary densities "
+            f"40d={d40} 50d={d50} 70d={d70} 80d={d80}"
+        )
+
+    # Multiples of 30 should appear in approximate decreasing order
+    # (1 month ≈ 2 months > 3 months under Poisson(1.0) on the count).
+    assert d30 > d90 and d60 > d90, (
+        f"Expected month-boundary tail: 30d={d30}, 60d={d60}, 90d={d90}"
+    )
+
+
 def test_state_medpar_error_rate(dist, config_factory):
     """For each well-sampled state, observed MEDPAR null-id+null-dob rate matches the CSV.
 
