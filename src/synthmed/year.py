@@ -25,7 +25,12 @@ import dorieh.cms.fts2yaml as f2y
 import numpy as np
 import pandas as pd
 
-from synthmed.columns import char_generation, date_generation, number_generation
+from synthmed.columns import (
+    GeneratedColumn,
+    char_generation,
+    date_generation,
+    number_generation,
+)
 
 log = logging.getLogger(__name__)
 
@@ -91,12 +96,12 @@ def _reuse_from_prior(
     data: pd.DataFrame,
     column: _FTSColumn,
     prior_frames: list[pd.DataFrame],
-) -> tuple[pd.Series, str] | None:
+) -> GeneratedColumn | None:
     """Try to source ``column`` from a prior same-year file's frame.
 
-    Returns ``(values, fmt)`` if a prior file produced this column for
-    the same beneficiaries, ``None`` otherwise. Beneficiaries are matched
-    via ``data.actual_bene_id == prior.BENE_ID``.
+    Returns a :class:`GeneratedColumn` if a prior file produced this
+    column for the same beneficiaries, ``None`` otherwise. Beneficiaries
+    are matched via ``data.actual_bene_id == prior.BENE_ID``.
 
     BENE_ID and BENE_ZIP are never reused (see :data:`_NEVER_REUSE`).
     """
@@ -114,8 +119,8 @@ def _reuse_from_prior(
         )
         values = merged[column.name]
         if column.is_numeric_like:
-            return values, f"%0{int(column.width)}d"
-        return values, "%s"
+            return GeneratedColumn(values, f"%0{int(column.width)}d")
+        return GeneratedColumn(values, "%s")
     return None
 
 
@@ -127,7 +132,7 @@ def _generate_column(
     year: int | str,
     start_date: pd.Timestamp,
     end_date: pd.Timestamp,
-) -> tuple[object, str]:
+) -> GeneratedColumn:
     """Dispatch a single FTS column to the appropriate per-type generator.
 
     ``"Number"``-labelled and ``"Year"``-labelled CHAR/DATE columns are
