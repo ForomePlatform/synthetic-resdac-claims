@@ -131,6 +131,13 @@ def generate_demographic(
         k=n,
         weights=dist.demographic["race"]["weights"],
     )
+    # OREC (Original Reason for Entitlement) is fixed at enrolment and
+    # invariant for the life of the beneficiary; we sample it ONCE here
+    # so survivors carry the same value through every increment_year
+    # call. Codes 0-3 are the canonical ResDAC OREC values: 0 = old-age,
+    # 1 = disability, 2 = ESRD, 3 = both. CUREC ("Current Reason") is
+    # allowed to vary and is still drawn per-year by columns.char_generation.
+    cohort["orec"] = np.random.choice(["0", "1", "2", "3"], size=n)
     return cohort
 
 
@@ -301,11 +308,14 @@ def increment_internal_database(
     )
 
     # (3) Kill off (1 - alive_ratio) of survivors during the elapsed year.
+    # Clip the drawn ratio so even a tail draw can't produce >20%
+    # mortality (or <0.5%); see GenerationConfig.alive_ratio_sd.
     start_dod = pd.to_datetime(f"{last_year}-01-01")
     end_dod = pd.to_datetime(f"{last_year}-12-31")
-    alive_ratio_jittered = np.random.normal(
-        config.alive_ratio, config.alive_ratio * 0.1
-    )
+    alive_ratio_jittered = float(np.clip(
+        np.random.normal(config.alive_ratio, config.alive_ratio_sd),
+        0.80, 0.995,
+    ))
     is_alive = np.random.rand(survivors.shape[0]) < alive_ratio_jittered
     n_deaths = int((~is_alive).sum())
     survivors["death_date"] = " "

@@ -218,6 +218,86 @@ def test_dob_error_rate(dist, config_factory):
 # ---------------------------------------------------------------------------
 
 
+def test_year_to_year_cohort_size_is_stable(dist, config_factory):
+    """Under default `alive_ratio_sd`, per-year cohort swings stay within ±3 %.
+
+    Pins the post-fix behaviour: the previously hardcoded
+    ``alive_ratio * 0.1`` jitter (~σ = 0.095) produced bimodal swings
+    of ±5pp+ year-over-year. The new ``alive_ratio_sd = 0.005`` default
+    should keep yearly deltas within a tight band around the
+    new-65 vs. deaths balance, regardless of seed.
+    """
+    from synthmed.internal_db import (
+        generate_internal_database,
+        increment_internal_database,
+    )
+    from synthmed.errors import generate_internal_errors
+
+    config = config_factory(total_people=20_000)
+    sizes = []
+    for seed_offset in range(5):
+        _seed(50 + seed_offset)
+        cohort = generate_internal_database(
+            20_000, 1940, 1950, generate_dead=True, death_year=2010,
+            dist=dist, config=config,
+        )
+        sizes.append(len(cohort))
+        for year in (2012, 2013, 2014, 2015, 2016):
+            cohort = increment_internal_database(cohort, year, dist, config)
+            cohort = generate_internal_errors(cohort, config)
+            sizes.append(len(cohort))
+
+    sizes_arr = np.asarray(sizes, dtype=float)
+    # Group consecutive years per seed (6 sizes each) and check deltas.
+    per_seed = sizes_arr.reshape(5, 6)
+    pct_deltas = np.abs(np.diff(per_seed, axis=1) / per_seed[:, :-1])
+    worst = pct_deltas.max()
+    # Default alive_ratio = 0.97 and new = 0.05 produce ~2 %/yr mean
+    # growth; with σ ≈ 0.7 % per year the 4σ envelope is roughly ±3 %
+    # around the mean, so individual deltas land in ~[-1 %, +5 %].
+    assert worst < 0.05, (
+        f"max year-over-year cohort swing was {worst:.2%}; "
+        f"expected < 5% under tightened alive_ratio_sd"
+    )
+
+
+def test_orec_invariant_across_years(dist, config_factory):
+    """OREC is fixed at enrolment and stays identical across all of a beneficiary's years.
+
+    Regression for the "OREC mutates across years" bug: previously
+    ENTLMT_RSN_ORIG hit no override in ``char_generation`` and fell
+    through to a per-year random-digit draw, silently breaking
+    natural-joins like dorieh's ``enrollments ⋈ beneficiaries``.
+    """
+    _seed(47)
+    from synthmed.internal_db import (
+        generate_internal_database,
+        increment_internal_database,
+    )
+
+    config = config_factory(total_people=3_000)
+    cohort = generate_internal_database(
+        3_000, 1940, 1950, generate_dead=True, death_year=2010,
+        dist=dist, config=config,
+    )
+    orec_by_id = dict(zip(cohort["id"], cohort["orec"]))
+
+    for year in (2012, 2013, 2014, 2015, 2016):
+        cohort = increment_internal_database(cohort, year, dist, config)
+        carried = cohort["id"].isin(orec_by_id)
+        if not carried.any():
+            continue
+        observed = cohort.loc[carried, "orec"].to_numpy()
+        expected = cohort.loc[carried, "id"].map(orec_by_id).to_numpy()
+        mismatches = int((observed != expected).sum())
+        assert mismatches == 0, (
+            f"year {year}: {mismatches} beneficiaries changed OREC across years"
+        )
+
+    # OREC support is the four canonical ResDAC codes.
+    assert set(np.unique(cohort["orec"])) <= {"0", "1", "2", "3"}
+
+
 def test_year_evolution_invariants(dist, config_factory):
     """Increment removes deaths, ages survivors by one, and adds new 65-year-olds."""
     _seed(46)

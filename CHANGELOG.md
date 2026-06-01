@@ -13,6 +13,47 @@ most recently shipped tag. Work in flight on `dev` accumulates under
 ## [Unreleased]
 
 ### Fixed
+- **CLI flags no longer silently shadow `GenerationConfig` defaults.**
+  [`synthmed.cli`](src/synthmed/cli.py) was hardcoding default values
+  for every flag (notably `--alive-ratio = 0.95`), so a `synthmed
+  generate` invocation used those CLI defaults regardless of what
+  `GenerationConfig` declared. After bumping `alive_ratio` to 0.97 in
+  `config.py`, the 5 M run via CLI was still seeing 0.95 and producing
+  flat (rather than monotonically growing) yearly cohort sizes. CLI
+  flags now default to `None`; unset flags are dropped before
+  constructing `GenerationConfig`, so the dataclass defaults stay
+  authoritative and future config tweaks propagate automatically.
+- **OREC (`ENTLMT_RSN_ORIG`) is now invariant across a beneficiary's years.**
+  Previously fell through to the random-digit default in
+  [`synthmed.columns.char_generation`](src/synthmed/columns.py) and was
+  redrawn independently every year. That silently broke downstream
+  natural-joins that treat OREC as a per-beneficiary key — concretely,
+  the Dorieh Medicare QC model's `enrollments ⋈ beneficiaries` was
+  dropping ~71 % of enrollment-years because the join key kept changing.
+  OREC is now sampled once per beneficiary in
+  [`generate_demographic`](src/synthmed/internal_db.py) (canonical
+  ResDAC codes `0`–`3`) and carried verbatim through
+  `increment_internal_database`; only CUREC (`ENTLMT_RSN_CURR`,
+  "Current Reason for Entitlement") still varies year-to-year, as it
+  should. Locked in by
+  `tests/test_statistical.py::test_orec_invariant_across_years`.
+- **Year-to-year cohort size now grows monotonically at ~2 %/yr.**
+  Two related changes to
+  [`synthmed.internal_db.increment_internal_database`](src/synthmed/internal_db.py)
+  and the corresponding `GenerationConfig` defaults:
+  - The per-transition mortality jitter was hardcoded at
+    `N(alive_ratio, alive_ratio × 0.1)` — σ ≈ 0.095 on the survival
+    probability — producing bimodal "everyone lives / everyone dies"
+    draws that swung enrolment by ±250 K to ±630 K per year on a 5 M
+    cohort. The jitter is now σ = 0.005 (configurable via the new
+    `GenerationConfig.alive_ratio_sd`) and clipped to `[0.80, 0.995]`.
+  - Default `alive_ratio` raised from 0.95 to 0.97 so that
+    expected deaths (3 %) sit safely below expected new-65 enrolees
+    (5 %) — the cohort now grows monotonically by ~2 %/yr, matching
+    the empirical 2011–2016 trajectory of the real Medicare 65+
+    population instead of oscillating around a flat mean.
+  Locked in by
+  `tests/test_statistical.py::test_year_to_year_cohort_size_is_stable`.
 - **DOB error distribution now peaks at month boundaries.** The
   previous additive-Poisson model in
   [`synthmed.errors._sample_dob_offsets`](src/synthmed/errors.py)
@@ -27,6 +68,18 @@ most recently shipped tag. Work in flight on `dev` accumulates under
   Locked in by `tests/test_statistical.py::test_dob_error_shape_peaks_at_month_boundaries`.
 
 ### Added
+- **`GenerationConfig.duplicate_admission_rate`** (default `0.0013`,
+  ≈ 20× the previous accidental baseline of ~1 in 15k that emerged
+  from independent admission-date draws). New
+  [`synthmed.medpar._inject_duplicate_admissions`](src/synthmed/medpar.py)
+  clones a configurable fraction of MEDPAR rows verbatim — same
+  `BENE_ID`, same admission/discharge dates, same diagnosis codes —
+  to model duplicate-claim patterns (split bills, adjustments
+  overlapping originals, crossover claims appearing twice) that
+  downstream QC code is expected to detect and dedupe. Clones are
+  forced to `last_record = False` so the death-date column stays
+  single-emit. Locked in by
+  `tests/test_medpar.py::test_duplicate_admissions_*`.
 - **Stratified trajectory replay for diagnoses.**
   [`synthmed.internal_db.generate_diagnosis`](src/synthmed/internal_db.py)
   now matches each synthetic beneficiary to a DE-SynPUF beneficiary

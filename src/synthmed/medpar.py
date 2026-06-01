@@ -34,7 +34,9 @@ def generate_medpar_internal_database(
     to model the real-world Medicare pattern of admissions whose
     enrolment row is missing (enrolment-data lag, retroactive enrolment,
     admin errors). Diagnosis codes are sampled last so they are
-    independent across admissions for the same beneficiary.
+    independent across admissions for the same beneficiary. Finally a
+    small fraction of rows (``config.duplicate_admission_rate``) are
+    cloned verbatim to model duplicate claims.
     """
     medpar = cohort.reindex(cohort.index.repeat(cohort.number_of_records))
     medpar["prev_id"] = medpar["id"].shift(-1)
@@ -44,6 +46,7 @@ def generate_medpar_internal_database(
 
     _inject_orphan_ids(medpar, config.orphan_admission_rate)
     medpar = generate_diagnosis(medpar, dist, config)
+    medpar = _inject_duplicate_admissions(medpar, config.duplicate_admission_rate)
     return cohort, medpar
 
 
@@ -66,3 +69,32 @@ def _inject_orphan_ids(medpar: pd.DataFrame, rate: float) -> None:
     if n_orphans == 0:
         return
     medpar.loc[mask, "id"] = mint_beneficiary_ids(n_orphans)
+
+
+def _inject_duplicate_admissions(medpar: pd.DataFrame, rate: float) -> pd.DataFrame:
+    """Clone a ``rate`` fraction of MEDPAR rows verbatim and append to the frame.
+
+    Each cloned row carries the same BENE_ID, admission/discharge
+    dates, diagnosis codes, and every other column as its source,
+    modelling "duplicate claim" rows seen in real Medicare data
+    (split bills, adjustments overlapping originals, crossover claims
+    appearing twice). Downstream QC code is expected to detect and
+    dedupe these.
+
+    Clones are forced to ``last_record = False`` so the original row
+    remains the single carrier of once-per-beneficiary outputs
+    (notably the death-date column), avoiding double-emission of
+    those values.
+
+    Returns a new frame (concat of the original and the clones); does
+    not mutate ``medpar`` in place.
+    """
+    if rate <= 0:
+        return medpar
+    mask = np.random.rand(medpar.shape[0]) < rate
+    if not mask.any():
+        return medpar
+    duplicates = medpar.loc[mask].copy()
+    if "last_record" in duplicates.columns:
+        duplicates["last_record"] = False
+    return pd.concat([medpar, duplicates], ignore_index=True)

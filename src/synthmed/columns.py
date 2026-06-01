@@ -293,6 +293,7 @@ def char_generation(
 
     1. Cohort-derived columns (exact name or substring of the label):
        ``BENE_ID``, ZIP (5 or 9), state code, county code, sex, race,
+       OREC (Original Reason for Entitlement -- invariant across years),
        ``DGNSCD_k`` diagnosis codes, death-date verification switch.
     2. Per-beneficiary Markov coverage chains (buy-in, HMO indicators).
     3. Enumerated value sets from the ResDAC docs (claim type, …).
@@ -338,6 +339,13 @@ def char_generation(
         return GeneratedColumn(underlying["sex"], "%s")
     if "race" in label_lower:
         return GeneratedColumn(underlying["race"], "%s")
+
+    # OREC must stay invariant across a beneficiary's years (see cohort
+    # ``orec`` column sampled in internal_db.generate_demographic). CUREC
+    # ("Current Reason …") is allowed to vary year-to-year and falls
+    # through to the default random-digit path below.
+    if "Original Reason for Entitlement" in column_label:
+        return GeneratedColumn(underlying["orec"], "%s")
 
     if (
         "Death Date Verification" in column_label
