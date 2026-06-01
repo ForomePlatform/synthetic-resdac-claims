@@ -6,8 +6,9 @@ be reflected here, with a one-line summary and a link back to the
 detailed write-up.
 
 Entries are grouped by area, then ordered by severity (highest first).
-Use `[x]` to mark resolved items; keep them in place for a release or
-two as a change record, then prune.
+**Resolved changes live in [CHANGELOG.md](CHANGELOG.md)**, not here —
+when an item ships, remove it from this file and add the
+corresponding entry to the `[Unreleased]` section of the changelog.
 
 ---
 
@@ -41,54 +42,49 @@ See [`docs/distributions/demographic_distributions.md`](docs/distributions/demog
 
 ## Diagnosis codes
 
-- [x] ~~`number_of_diagnoses` value is not enforced on `diag_k` columns
-  and the count column is itself dead.~~ **Resolved 2026-05-19** by
-  dropping `number_of_diagnoses.csv` end-to-end. Investigation showed
-  the loaded distribution populated a `number_of_diagnoses` column on
-  the in-memory cohort that no downstream code path ever read, and the
-  FTS slots that should have carried the count (`DGNS_CD_CNT`,
-  `POA_DGNS_CD_CNT`, `DGNS_E_CD_CNT`, `POA_DGNS_E_CD_CNT`) fell through
-  to the default uniform-random `NUM` generator. A future fix is to
-  add a `DGNSCNT`/`DGNS_CD_CNT` override in
-  [`synthmed.columns.number_generation`](src/synthmed/columns.py) that
-  emits `min(k, n_filled_diags)` so the count matches the actual
-  populated `diag_k` slots.
-- [ ] **No joint distribution across admissions.** `diag_1..diag_25` for
-  one admission are drawn jointly from a single CMS DE-SynPUF row, but
-  a patient's subsequent admissions are independent of their prior
-  ones. Real claims data show strong sequential / chronic-condition
-  patterns. Implementation sketch: tag each beneficiary in the internal
-  cohort with a latent chronic-condition state, then condition each
-  admission's diag draw on that state. Extension to **multi-year**
-  trajectories (state persists across `increment_internal_database`
-  calls) is the natural next step. **Privacy constraint:** deriving the
-  joint table from a real confidential CMS extract carries
-  re-identification risk (rare pairs of specific illnesses can be
-  near-identifying); any data-derived table must go through
-  documented anti-leakage noise before being shipped, matching the
-  pattern already used for [[state_error_medpar_rates.csv]].
+- [ ] **Admission-count column is uniform-random, not derived.** The
+  FTS slots `DGNS_CD_CNT`, `POA_DGNS_CD_CNT`, `DGNS_E_CD_CNT`, and
+  `POA_DGNS_E_CD_CNT` fall through to the default uniform-random
+  `NUM` generator instead of reflecting how many `diag_k` slots are
+  actually populated. Add a `DGNSCNT` / `DGNS_CD_CNT` override in
+  [`synthmed.columns.number_generation`](src/synthmed/columns.py)
+  that emits `min(k, n_filled_diags)`.
+- [ ] **Trajectory replay is single-year only.** Each cohort year
+  re-samples a fresh DE-SynPUF beneficiary for each synthetic
+  beneficiary, so the across-admission joint is preserved within a
+  year but a synthetic beneficiary's chronic-condition trajectory
+  does not persist across `increment_internal_database` calls. Carry
+  the DESYNPUF_ID assignment across years so multi-year patterns
+  stay coherent.
+- [ ] **Sparse-stratum fallback is binary, not smoothed.**
+  [`synthmed.internal_db._stratum_pool`](src/synthmed/internal_db.py)
+  falls back from `(age, sex, state)` to `(age, sex, *)` to
+  `(age, *, *)` to global when the requested cell is empty, but does
+  not blend the cell with its parent (Bayesian smoothing). Small-state
+  strata that are non-empty but sparse get noisier-than-necessary
+  draws.
 - [ ] **ICD-9 only; only 10 codes used per admission.** DE-SynPUF only
   exposes ICD-9 and only `ICD9_DGNS_CD_1..10`; columns `diag_11..diag_25`
   in the internal cohort are left as blank space. Modern Medicare uses
   ICD-10 and ~56% of admissions exceed 10 diagnoses.
-- [ ] **No conditioning on demographics or region.** Diagnosis draws
-  ignore age, sex, race, and geography of the synthetic beneficiary.
-  **Privacy constraint:** the same re-identification risk as for the
-  joint-across-admissions item applies — any data-derived
-  age/sex/region × diagnosis table must be passed through documented
-  anti-leakage noise before publication.
-- [x] ~~`diag1.csv` consumer decision is open.~~ **Resolved 2026-05-19**
-  by dropping the file: diagnosis sampling uses CMS DE-SynPUF rows
-  exclusively (`diag_1..diag_10` with within-admission joint structure).
-  The 4076-row primary-dx marginal frequency table and its loader call
-  have been removed from `synthmed.distributions`.
 
 ## Column generation
 
 - [ ] **`number_generation` width-6+ cap is `10*5 = 50`, not `10**5 = 100000`.**
-  See [`synthmed.columns.number_generation`](src/synthmed/columns.py).
+  See [`synthmed.columns._num_range`](src/synthmed/columns.py).
   Behavior preserved from the upstream prototype; the documented intent
   is the larger cap. Fix once we have a regression suite.
+- [ ] **MEDPAR death-date-verification switch is inverted vs. MBSF.** In
+  [`synthmed.columns._death_date_switch`](src/synthmed/columns.py),
+  MBSF emits `"V"` only on dead beneficiaries (intuitive), but MEDPAR
+  emits `"V"` on every admission row of every beneficiary *except* the
+  last-record row of alive ones — so dead beneficiaries also get `"V"`
+  on every record. Suspected typo in the upstream prototype's logical
+  expression. Decide between three fixes once we have a real-data
+  comparison: (a) match MBSF (death-date-bearing record only), (b)
+  invert to mean "this record's death date is valid", (c) leave as-is
+  if real MEDPAR actually carries `"V"` on most rows. Preserved during
+  the v0.2 refactor to keep DAT output unchanged.
 - [ ] **Most `CHAR` columns without explicit overrides are random digit
   strings.** Matches the upstream prototype but yields semantically
   meaningless values (e.g. HMO sub-indicators, payment codes). Each new
@@ -115,11 +111,6 @@ See [`docs/distributions/demographic_distributions.md`](docs/distributions/demog
 
 See [`docs/distributions/ssa_fips_state_county_2025.md`](docs/distributions/ssa_fips_state_county_2025.md).
 
-- [x] ~~Latent loader bug — typo in `dtype` argument (`ssac_ode` →
-  `ssa_code`).~~ Fixed 2026-05-16. The 9 CT-planning-region rows with
-  empty `ssa_code` (introduced in NBER's 2025 vintage) were forcing
-  `float64` inference and losing leading zeros, which would break
-  `ssa_code.str.slice(0, 2)` in `generate_location`. Sidecar updated.
 - [ ] **Connecticut transition not gracefully handled.** The 2025 NBER
   crosswalk has empty `ssa_code` for CT's 9 new planning regions
   (`09110..09190`) and empty `fipscounty` for the 8 legacy CT counties.
@@ -167,29 +158,23 @@ See [`docs/distributions/ssa_fips_state_county_2025.md`](docs/distributions/ssa_
 
 See [`docs/distributions/state_error_medpar_rates.md`](docs/distributions/state_error_medpar_rates.md).
 
-- [x] ~~No "orphan" admissions — cross-table consistency too tight.~~
-  **Fixed 2026-05-17** by adding `GenerationConfig.orphan_admission_rate`
-  (default `0.01`) and a new helper
-  [`synthmed.medpar._inject_orphan_ids`](src/synthmed/medpar.py) that
-  replaces BENE_ID on a small fraction of MEDPAR rows with fresh,
-  unseen IDs (same 12+3-char format as cohort IDs). Those admissions
-  no longer match any MBSF row, producing exactly the orphan pattern
-  dorieh's `medicare.qc_admissions` materialized view expects.
-  *Surfaced by the 5 M-run dashboard verification: the
-  "Medicare QC (Clean)" Superset dashboard broke on zero orphans;
-  with the fix in place the count is small-but-positive as expected.*
-  Follow-ups:
-  - [ ] Calibrate the 1% default against an empirical real-data
-    measurement (same authorization caveat as for
-    `state_error_medpar_rates.csv`).
-  - [ ] Optional: extend to per-state orphan rates, mirroring the
-    state-correlated structure of the existing MEDPAR error
-    table.
-- [ ] **DOB discrepancy distribution drift.** *Minor finding 2026-05-17
-  from the dashboard comparison; specifics TBD.* The injected DOB
-  errors render in the dashboard but the shape or magnitude appears
-  slightly off vs. real-data patterns. M.~Bouzinier to expand with the
-  concrete delta when convenient.
+- [ ] **Orphan-admission rate default is best-guess.** `GenerationConfig.orphan_admission_rate`
+  defaults to `0.01`; calibrate against an empirical real-data
+  measurement once authorization is available (same caveat as
+  `state_error_medpar_rates.csv`).
+- [ ] **Orphan-admission rate is global, not per-state.** Optional
+  follow-up to mirror the state-correlated structure of the existing
+  MEDPAR error table.
+- [ ] **DOB error mode weights are not empirically calibrated.** The
+  mixture in
+  [`synthmed.errors._DOB_ERROR_MODES`](src/synthmed/errors.py) — 55 %
+  month-off / 30 % day-off / 5 % year-off / 10 % combined — was
+  chosen by domain intuition (month-typos most common; combined
+  rarest) after the 2026-05-21 fix to the additive-Poisson shape.
+  Pin against real-extract DOB-error frequencies when authorization
+  is available; the per-mode Poisson parameters
+  (`Poisson(1.0)` for month-count, `Poisson(1.5)` for day-count,
+  `Poisson(0.5)` for year-count) likewise need empirical pinning.
 - [ ] **Fill in `@bouzinier-2026-springer-ch8` placeholder once the
   volume ships.** Chapter title, author list, book title, and editors
   are tagged `FORTHCOMING` in
@@ -219,16 +204,6 @@ See [`docs/distributions/state_error_medpar_rates.md`](docs/distributions/state_
   independently within a year, so admission may post-date discharge.
   Also causes rare duplicate `(BENE_ID, ADM, DIS)` triples (~1 in 15k).
 
-## Data quality / provenance
-
-- [x] ~~DE-SynPUF sample is ~320 MB.~~ Now lazy-downloaded by
-  [`synthmed.samples.ensure_samples`](src/synthmed/samples.py) into
-  `inputs/samples/` (gitignored). SHA-256 manifest pinned; CMS URLs
-  are the source. Sidecar:
-  [`docs/distributions/medicare_sample_data.md`](docs/distributions/medicare_sample_data.md).
-  Follow-ups under "Sample data downloader" below.
-- [x] All seven distribution-file sidecars complete (2026-05-16).
-
 ## Sample data downloader
 
 See [`docs/distributions/medicare_sample_data.md`](docs/distributions/medicare_sample_data.md)
@@ -236,15 +211,16 @@ and [`src/synthmed/samples.py`](src/synthmed/samples.py).
 
 - [ ] **CMS URL stability.** The `/research-statistics-data-and-systems/.../synpufs/downloads/`
   path has moved at least twice historically. When it rots, update
-  `_URL_PATTERN` in `samples.py` and add an optional mirror field per
-  sample.
+  `_INPATIENT_URL` / `_BENEFICIARY_URL` in `samples.py` and add an
+  optional mirror field per sample.
 - [ ] **No resumable downloads.** Stdlib `urllib.request` is used; a
   partial download is dropped and retried from scratch. Acceptable for
   one-time-per-machine work; if it becomes annoying, swap to
   `requests` + `Range` headers.
-- [ ] **No parallel downloads.** All 20 ZIPs are pulled sequentially.
-  Trivial to parallelize with `concurrent.futures.ThreadPoolExecutor`
-  if first-run latency becomes a complaint.
+- [ ] **No parallel downloads.** All 40 sample ZIPs (20 inpatient + 20
+  beneficiary summary) are pulled sequentially. Trivial to parallelize
+  with `concurrent.futures.ThreadPoolExecutor` if first-run latency
+  becomes a complaint.
 - [ ] **No progress bar.** Plain `logging.info` is emitted per file.
   `rich.progress` or `tqdm` would be friendlier but adds a dep.
 
@@ -293,17 +269,22 @@ than a quick win:
   the code is organized — so any approach also needs to surface that
   constraint at output-write time.
 
+## Per-year file emission
+
+- [ ] **Fragile MEDPAR-last reordering.** `synthmed.year._reorder_medpar_last`
+  reverses the FTS list iff MEDPAR happens to come first in
+  `listdir()` order; otherwise it leaves the list alone. This works on
+  every supported FTS layout but breaks silently if a future layout
+  has MEDPAR neither first nor last (e.g. three MBSF + MEDPAR +
+  another MBSF). A robust fix is a sort that pushes MEDPAR to the end
+  while preserving MBSF relative order, but that would change reuse
+  semantics on existing layouts and needs a comparison run before
+  changing.
+
 ## Repo / packaging
 
-- [x] ~~No tests yet.~~ Two smoke tests under `tests/test_smoke.py`
-  cover pipeline completion (100 patients, fixed seed, asserts FTS↔DAT
-  pairing + non-empty outputs + row counts in plausible bands) and
-  bit-for-bit reproducibility across two seeded runs.
 - [ ] **Broader regression coverage.** Snapshot SHA-256 of each output
   `.dat` from a known-good run into a checked-in fixture; assert
   equality on subsequent runs. Catches accidental sampling-order
   changes that the existing reproducibility test would miss across
   refactors.
-- [ ] `dorieh` is listed as a PyPI dependency in `pyproject.toml`; if
-  the published package name differs, the spec needs to switch to a
-  direct VCS reference.

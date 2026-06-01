@@ -123,6 +123,178 @@ loader raises rather than calling out.
 A minimal end-to-end demo lives at [`notebooks/demo.ipynb`](notebooks/demo.ipynb).
 It only calls into `synthmed` — there is no business logic in the notebook.
 
+## How it works
+
+The diagram below traces a single pipeline run end to end. Source lives
+at [`docs/diagrams/pipeline-flow.mmd`](docs/diagrams/pipeline-flow.mmd);
+this block is rendered automatically by GitHub.
+
+```mermaid
+flowchart TD
+    %% ---- inputs ----
+    cfg[/GenerationConfig/]
+    geo[("Location crosswalks<br/>ZIP &harr; FIPS &harr; SSA<br/>+ 2020 ZCTA population")]
+    popref[("Demographic &amp; error reference<br/>race &amp; sex sampling weights<br/>+ state-correlated MEDPAR error rates")]
+    desynpuf[("CMS DE-SynPUF<br/>inpatient samples + beneficiary demographics<br/>(stratified trajectories: bene-keyed history,<br/>indexed by age band &times; sex &times; state)")]
+    fts[/"FTS schemas<br/>inputs/schemas/&lt;cohort&gt;/&lt;year&gt;/"/]
+
+    %% ---- initial cohort build ----
+    cfg --> mint
+    geo --> loc
+    popref --> demo
+
+    subgraph build["<b>generate_internal_database</b>"]
+        direction TB
+        mint["mint_beneficiary_ids<br/><i>15-char BENE_IDs</i>"]
+        mint --> loc["generate_location<br/><i>ZIP &middot; FIPS &middot; SSA state/county</i>"]
+        loc --> demo["generate_demographic<br/><i>DOB &middot; death &middot; age &middot; sex &middot; race</i>"]
+        demo --> mstat["generate_medpar_stats<br/><i>number_of_records ~ Poisson</i>"]
+    end
+
+    mstat --> coh[("<b>cohort</b><br/>1 row / beneficiary<br/><i>= MBSF source data</i>")]
+
+    %% ---- MEDPAR expansion ----
+    coh --> rep
+    desynpuf --> dx
+
+    subgraph expand["<b>generate_medpar_internal_database</b>"]
+        direction TB
+        rep["reindex.repeat by<br/>number_of_records"]
+        rep --> orph["_inject_orphan_ids<br/><i>~1% fresh BENE_IDs</i>"]
+        orph --> dx["generate_diagnosis<br/><i>per synthetic bene: sample 1 DE-SynPUF bene<br/>matching (age band, sex, state); replay their<br/>admissions across the synthetic bene's k rows</i>"]
+    end
+
+    dx --> med[("<b>medpar</b><br/>1 row / admission<br/><i>= MEDPAR source data</i>")]
+
+    %% ---- per-year emission ----
+    coh --> dispatch
+    med --> dispatch
+    fts --> dispatch
+
+    subgraph emit["<b>generate_year_files</b> &nbsp;(per FTS in year directory)"]
+        direction TB
+        dispatch{"is_medpar in<br/>fts filename?"}
+        dispatch -->|no| mbsfRender["render from cohort"]
+        dispatch -->|yes| medparRender["render from medpar"]
+    end
+
+    mbsfRender --> outMBSF[/"output/&lt;cohort&gt;/&lt;year&gt;/<br/>mbsf_*.dat"/]
+    medparRender --> outMEDPAR[/"output/&lt;cohort&gt;/&lt;year&gt;/<br/>medpar_*.dat"/]
+
+    %% ---- year transition ----
+    coh --> dropDead
+
+    subgraph incr["<b>increment_internal_database</b>"]
+        direction TB
+        dropDead["drop already-dead"]
+        dropDead --> deltaNew["mint delta cohort<br/><i>(generate_internal_database again<br/>for new 65-year-olds)</i>"]
+        deltaNew --> killSome["kill 1-alive_ratio<br/>of survivors during year Y"]
+        killSome --> ageUp["age survivors +1"]
+        ageUp --> mstat2["generate_medpar_stats<br/>for survivors"]
+        mstat2 --> concat["concat survivors + delta"]
+    end
+
+    concat --> err1["generate_internal_errors<br/><i>race / DOB / missing-MEDPAR drift</i>"]
+    err1 --> reexp["generate_medpar_internal_database<br/><i>(re-derive medpar from updated cohort)</i>"]
+    reexp --> err2["generate_internal_medpar_errors<br/><i>state-correlated BENE_ID / birth_date nulls</i>"]
+    popref -.-> err2
+    err2 -. "year Y+1 cohort" .-> coh
+```
+
+The pipeline holds two in-memory pandas frames per calendar year and
+walks them through four steps:
+
+1. **Build the initial cohort** — `generate_internal_database`. Calls,
+   in order: `mint_beneficiary_ids` (15-char synthetic BENE_IDs in
+   blocks of 1000), `generate_location` (ZIP sampled with weights
+   proportional to 2020 ZCTA population, then merged through the
+   ZIP→FIPS and FIPS→SSA crosswalks), `generate_demographic`
+   (birth_date, death_date, age, sex, race — sex and race sampled from
+   the JSON weights in `inputs/distributions/demographic_distributions.json`),
+   and `generate_medpar_stats` (each beneficiary's `number_of_records`
+   admission count drawn from a Poisson with mean
+   `config.average_medpar_records`). The result is the **cohort**: one
+   row per synthetic beneficiary, holding every column an MBSF row
+   needs.
+
+2. **Expand to per-admission MEDPAR** — `generate_medpar_internal_database`.
+   Repeats each cohort row `number_of_records` times so each admission
+   carries the beneficiary's identity, flags `last_record` on the final
+   admission per beneficiary (so once-per-person columns like
+   death-date can land on a single row), then `_inject_orphan_ids`
+   rewrites BENE_ID on roughly `config.orphan_admission_rate` of
+   admissions to fresh, never-enrolled IDs so downstream QC sees
+   plausible orphan-admission counts. `generate_diagnosis` then does
+   **stratified trajectory replay**: for each synthetic beneficiary it
+   samples one DE-SynPUF beneficiary from the matching
+   `(age band, sex, state)` stratum and replays *that* DE-SynPUF
+   beneficiary's actual admission diagnoses across the synthetic
+   beneficiary's `k` admissions. This preserves both the
+   within-admission joint structure (whole `diag_1..diag_10` rows
+   sampled together) and the across-admission joint structure (chronic
+   conditions stay correlated within a beneficiary's year), while
+   matching the synthetic beneficiary's demographics. The result is
+   the **medpar** frame.
+
+3. **Emit the year's DAT files** — `generate_year_files`. For each
+   `*.fts` schema in the year directory, picks `medpar` if the
+   filename contains `"medpar"` and `cohort` otherwise, then renders
+   one row per row of the chosen frame against the FTS column layout
+   (NUM/CHAR/DATE protocols in [`columns.py`](src/synthmed/columns.py),
+   with cohort-derived columns like BENE_ID, ZIP, sex, race
+   short-circuiting their random defaults). MBSF files are emitted
+   first so MEDPAR rows can reuse beneficiary-level column values
+   already committed to the MBSF files (BENE_ID and BENE_ZIP excepted
+   — those always come from the cohort directly so orphan-admission
+   IDs stay distinct).
+
+4. **Advance to the next year** — `increment_internal_database` drops
+   already-dead beneficiaries, mints a small delta of new 65-year-olds
+   (by calling `generate_internal_database` again with a one-year DOB
+   range), kills `(1 - alive_ratio)` of survivors during the elapsed
+   year, ages the remaining survivors by one, redraws their MEDPAR
+   admission counts, and concatenates. Then
+   `generate_internal_errors` injects race miscoding, DOB drift, and
+   missing-MEDPAR errors; `generate_medpar_internal_database`
+   re-expands; `generate_internal_medpar_errors` adds the
+   state-correlated `BENE_ID` / `birth_date` nulls. The new cohort
+   then re-enters step 2 for the next calendar year.
+
+The MBSF/MEDPAR dispatch itself is one line in
+[`year.generate_year_files`](src/synthmed/year.py):
+`underlying = medpar if "medpar" in fts_filename.lower() else cohort`.
+Year-to-year orchestration lives in
+[`pipeline.run`](src/synthmed/pipeline.py); see its docstring for the
+exact order of operations and the rebind-vs-mutate contract on the
+cohort.
+
+## Tests
+
+```bash
+pip install -e ".[dev]"          # adds pytest and scipy
+pytest                           # full suite (smoke + reproducibility + stats), ~20 s
+pytest -m "not statistical"      # smoke + reproducibility only, ~15 s
+pytest -m statistical            # distribution goodness-of-fit only, ~5 s
+```
+
+The default `pytest` run covers everything:
+
+* **Smoke + reproducibility** (`tests/test_smoke.py`) — 100-beneficiary
+  end-to-end run with a fixed seed; asserts the pipeline completes,
+  every input FTS has a matching DAT, output sizes look right, and two
+  seeded runs are byte-identical.
+* **Statistical** (`tests/test_statistical.py`) — builds N≈10 000
+  cohorts and checks that the race/sex marginals, the configured
+  orphan-admission rate, the configured error-injection rates, the
+  per-state MEDPAR error rates, the year-to-year cohort-evolution
+  invariants, and the diagnosis-trajectory contract (every emitted
+  `diag_1..diag_10` row is a verbatim DE-SynPUF inpatient row, and a
+  synthetic beneficiary's multiple admissions all trace to a single
+  DE-SynPUF beneficiary) all match what `synthmed` claims to produce.
+
+Both suites need the DE-SynPUF samples present under `inputs/samples/`;
+run `synthmed download-samples` first if necessary.
+
 ## Layout
 
 ```

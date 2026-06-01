@@ -26,12 +26,16 @@ def _build_parser() -> argparse.ArgumentParser:
                    help="Directory with DE-SynPUF inpatient sample CSVs.")
     g.add_argument("--output-dir", type=Path, required=True,
                    help="Directory where generated DAT/FTS files will be written.")
-    g.add_argument("--total-people", type=int, default=1000,
-                   help="Initial cohort size (default: 1000).")
-    g.add_argument("--alive-ratio", type=float, default=0.95,
-                   help="Fraction of beneficiaries alive each year (default: 0.95).")
-    g.add_argument("--initial-dob-start", type=int, default=1940)
-    g.add_argument("--initial-dob-end", type=int, default=1950)
+    # CLI flags default to None so the GenerationConfig defaults in
+    # config.py stay authoritative; only an explicit user value overrides.
+    # Bumping a default in config.py is then enough -- no CLI drift.
+    g.add_argument("--total-people", type=int, default=None,
+                   help="Initial cohort size (default: GenerationConfig.total_people).")
+    g.add_argument("--alive-ratio", type=float, default=None,
+                   help="Mean per-year survival probability "
+                        "(default: GenerationConfig.alive_ratio).")
+    g.add_argument("--initial-dob-start", type=int, default=None)
+    g.add_argument("--initial-dob-end", type=int, default=None)
     g.add_argument("--seed", type=int, default=None,
                    help="If set, seed all RNGs for reproducible output.")
 
@@ -51,16 +55,21 @@ def _build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     if args.command == "generate":
+        cli_overrides = {
+            "total_people": args.total_people,
+            "alive_ratio": args.alive_ratio,
+            "initial_dob_start": args.initial_dob_start,
+            "initial_dob_end": args.initial_dob_end,
+            "seed": args.seed,
+        }
+        # Drop unset flags so GenerationConfig's own defaults take effect.
+        cli_overrides = {k: v for k, v in cli_overrides.items() if v is not None}
         config = GenerationConfig(
             data_root=args.data_root,
             distribution_dir=args.distribution_dir,
             sample_dir=args.sample_dir,
             output_dir=args.output_dir,
-            total_people=args.total_people,
-            alive_ratio=args.alive_ratio,
-            initial_dob_start=args.initial_dob_start,
-            initial_dob_end=args.initial_dob_end,
-            seed=args.seed,
+            **cli_overrides,
         )
         run(config)
         return 0
