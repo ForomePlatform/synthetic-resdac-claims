@@ -17,6 +17,9 @@ are injected on the way through.
   [ORCID 0009-0006-4271-9728](https://orcid.org/0009-0006-4271-9728)) —
   original design and prototype implementation
   ([ChilliPenguin/SynthMed](https://github.com/ChilliPenguin/SynthMed)).
+- **Mark Chumack** — University of Massachusetts Amherst
+  ([ORCID 0009-0009-4397-6541](https://orcid.org/0009-0009-4397-6541)) —
+  HMO / Buy-In enrollment indicator sampler (sticky Markov-chain model).
 - **Dmitry Etin** — Deggendorf Institute of Technology
   ([ORCID 0000-0003-1068-2781](https://orcid.org/0000-0003-1068-2781)).
 - **Michael Bouzinier** — Harvard University

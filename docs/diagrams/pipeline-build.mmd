@@ -1,0 +1,31 @@
+%% Pipeline part A: cohort and MEDPAR construction (paper figure). Render: npx -p @mermaid-js/mermaid-cli mmdc -i pipeline-build.mmd -o pipeline-build.png -b white. Companion to pipeline-transition.mmd. The full single-diagram view lives in pipeline-flow.mmd / README.md.
+flowchart LR
+    cfg[/GenerationConfig/]
+    geo[("Location crosswalks")]
+    popref[("Demographic + error reference")]
+    desynpuf[("CMS DE-SynPUF inpatient + beneficiary samples")]
+
+    cfg --> mint
+    geo --> loc
+    popref --> demo
+
+    subgraph build["<b>generate_internal_database</b>"]
+        direction TB
+        mint["mint_beneficiary_ids"]
+        mint --> loc["generate_location"]
+        loc --> demo["generate_demographic"]
+        demo --> mstat["generate_medpar_stats"]
+    end
+
+    mstat --> coh[("<b>cohort</b><br/>= MBSF source")]
+    coh --> rep
+    desynpuf --> dx
+
+    subgraph expand["<b>generate_medpar_internal_database</b>"]
+        direction TB
+        rep["reindex.repeat × number_of_records"]
+        rep --> orph["_inject_orphan_ids"]
+        orph --> dx["generate_diagnosis"]
+    end
+
+    dx --> med[("<b>medpar</b><br/>= MEDPAR source")]
