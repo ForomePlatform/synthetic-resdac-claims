@@ -25,3 +25,8 @@ dist/
 # IDE
 .idea/
 .vscode/
+
+# Local dataset builds and environments -- never commit these
+/*.zip
+/data/
+.envrc

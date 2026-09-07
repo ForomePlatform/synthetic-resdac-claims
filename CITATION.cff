@@ -14,6 +14,10 @@ authors:
     alias: ChilliPenguin
     affiliation: Northwestern University
     orcid: "https://orcid.org/0009-0006-4271-9728"
+  - family-names: Chumack
+    given-names: Mark
+    affiliation: University of Massachusetts Amherst
+    orcid: "https://orcid.org/0009-0009-4397-6541"
   - family-names: Etin
     given-names: Dmitry
     affiliation: Deggendorf Institute of Technology
@@ -23,7 +27,7 @@ authors:
     email: michael.bouzinier@forome.org
     affiliation: Harvard University
     orcid: "https://orcid.org/0000-0002-3161-5601"
-repository-code: "https://github.com/forome/synthetic-resdac-claims"
+repository-code: "https://github.com/ForomePlatform/synthetic-resdac-claims"
 license: Apache-2.0
 keywords:
   - medicare
@@ -54,6 +58,10 @@ preferred-citation:
       given-names: Pavel
       affiliation: Northwestern University
       orcid: "https://orcid.org/0009-0006-4271-9728"
+    - family-names: Chumack
+      given-names: Mark
+      affiliation: University of Massachusetts Amherst
+      orcid: "https://orcid.org/0009-0009-4397-6541"
     - family-names: Etin
       given-names: Dmitry
       affiliation: Deggendorf Institute of Technology
@@ -63,10 +71,10 @@ preferred-citation:
       affiliation: Harvard University
       orcid: "https://orcid.org/0000-0002-3161-5601"
   year: 2026
-  month: 3
+  month: 6
   publisher:
     name: Zenodo
-  version: v1
-  doi: 10.5281/zenodo.18915558
-  url: "https://doi.org/10.5281/zenodo.18915558"
+  version: v3
+  doi: 10.5281/zenodo.20495138
+  url: "https://doi.org/10.5281/zenodo.20495138"
   license: CC-BY-4.0

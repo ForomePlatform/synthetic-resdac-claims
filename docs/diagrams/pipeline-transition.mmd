@@ -1,0 +1,22 @@
+%% Pipeline part B: year-to-year transition (paper figure). Render: npx -p @mermaid-js/mermaid-cli mmdc -i pipeline-transition.mmd -o pipeline-transition.png -b white. Companion to pipeline-build.mmd. The full single-diagram view lives in pipeline-flow.mmd / README.md.
+flowchart LR
+    cohY[("<b>cohort</b> for year Y")]
+    popref[("Demographic + error reference<br/>(state error rates)")]
+
+    cohY --> dropDead
+
+    subgraph incr["<b>increment_internal_database</b>"]
+        direction TB
+        dropDead["drop already-dead"]
+        dropDead --> deltaNew["mint delta cohort (new 65-year-olds)"]
+        deltaNew --> killSome["kill (1 − alive_ratio) of survivors"]
+        killSome --> ageUp["age survivors +1"]
+        ageUp --> mstat2["generate_medpar_stats (survivors)"]
+        mstat2 --> concat["concat survivors + delta"]
+    end
+
+    concat --> err1["generate_internal_errors"]
+    err1 --> reexp["generate_medpar_internal_database (re-derive)"]
+    reexp --> err2["generate_internal_medpar_errors"]
+    popref -.-> err2
+    err2 --> cohYp1[("<b>cohort</b> for year Y+1")]
