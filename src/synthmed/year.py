@@ -25,6 +25,7 @@ import dorieh.cms.fts2yaml as f2y
 import numpy as np
 import pandas as pd
 
+from synthmed.config import MarkovConfig
 from synthmed.columns import (
     GeneratedColumn,
     char_generation,
@@ -132,6 +133,7 @@ def _generate_column(
     year: int | str,
     start_date: pd.Timestamp,
     end_date: pd.Timestamp,
+    markov_chains: dict[str, MarkovConfig] | None = None,
 ) -> GeneratedColumn:
     """Dispatch a single FTS column to the appropriate per-type generator.
 
@@ -142,7 +144,10 @@ def _generate_column(
     if column.is_numeric_like:
         return number_generation(column.width, column.label, underlying, year)
     if column.type == "CHAR":
-        return char_generation(column.name, column.width, column.label, underlying, is_medpar)
+        return char_generation(
+            column.name, column.width, column.label, underlying, is_medpar,
+            markov_chains=markov_chains,
+        )
     if column.type == "DATE":
         return date_generation(
             column.width, column.label, underlying, is_medpar, start_date, end_date,
@@ -177,6 +182,7 @@ def generate_year_files(
     year: int | str,
     cohort: pd.DataFrame,
     medpar: pd.DataFrame,
+    markov_chains: dict[str, MarkovConfig] | None = None,
 ) -> None:
     """For every FTS schema in ``input_dir``, emit the matching DAT file in ``output_dir``.
 
@@ -243,6 +249,7 @@ def generate_year_files(
                 column, underlying,
                 is_medpar=is_medpar, year=year,
                 start_date=start_date, end_date=end_date,
+                markov_chains=markov_chains,
             )
             if column.is_numeric_like:
                 out[column.name] = values

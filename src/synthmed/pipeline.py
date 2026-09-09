@@ -175,7 +175,10 @@ def run(
         entry = directory_map[current_year]
         # cohort → every MBSF file for current_year; medpar → MEDPAR file.
         # The MBSF/MEDPAR dispatch is FTS-filename-based inside year.py.
-        generate_year_files(entry["input"], entry["output"], current_year, cohort, medpar)
+        generate_year_files(
+            entry["input"], entry["output"], current_year, cohort, medpar,
+            markov_chains=config.markov_chains,
+        )
         log.info(
             "Year %s: done in %.1fs (MBSF=%d rows, MEDPAR=%d rows)",
             current_year, time.perf_counter() - year_start, len(cohort), len(medpar),

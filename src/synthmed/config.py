@@ -2,8 +2,47 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+
+
+@dataclass
+class MarkovConfig:
+    """Per-beneficiary 12-month coverage-indicator chain parameters.
+
+    dominant_prob of beneficiaries get a flat 12-month pattern of
+    dominant_code; secondary_prob get a flat pattern of
+    secondary_code; the remainder follow a sticky Markov walk over
+    markov_states with self_transition_prob on the diagonal and
+    the residual mass spread uniformly. Chain names are matched against
+    column_label.lower() via substring containment.
+    """
+    dominant_code: str
+    dominant_prob: float
+    secondary_code: str
+    secondary_prob: float
+    markov_states: list[str]
+    self_transition_prob: float = 0.995
+
+
+def default_markov_chains() -> dict[str, MarkovConfig]:
+    """Default coverage chains: ResDAC-coded Buy-In and HMO indicators."""
+    return {
+        "buy-in indicator": MarkovConfig(
+            dominant_code="3",       # Part A and Part B, no state buy-in
+            dominant_prob=0.765,
+            secondary_code="C",      # Part A and B state buy-in
+            secondary_prob=0.20,
+            markov_states=["0", "1", "2", "A", "B"],
+        ),
+        "hmo indicator": MarkovConfig(
+            dominant_code="0",       # Not a member of an HMO
+            dominant_prob=0.69,
+            secondary_code="C",      # Lock-in, GHO processes all claims
+            secondary_prob=0.30,
+            markov_states=["1", "2", "4"],
+        ),
+    }
 
 
 @dataclass
@@ -90,6 +129,12 @@ class GenerationConfig:
     sampled_diag_columns: int = 10
 
     seed: int | None = None
+
+    # Per-beneficiary monthly coverage-indicator chains (Buy-In, HMO).
+    # Keys are lowercase substrings matched against FTS column labels.
+    markov_chains: dict[str, MarkovConfig] = field(
+        default_factory=default_markov_chains
+    )
     """If set, seeds Python ``random``, ``numpy.random``, and ``Faker`` at
     the start of :func:`synthmed.pipeline.run` for reproducible output.
     Leave ``None`` for fresh randomness each run."""

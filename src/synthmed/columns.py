@@ -22,6 +22,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from synthmed.config import MarkovConfig, default_markov_chains
 from synthmed.generators import random_char_gen, random_date_gen
 
 from typing import NamedTuple
@@ -201,23 +202,6 @@ class EnumeratedTokens:
     tokens: tuple[str, ...]
 
 
-@dataclass
-class MarkovConfig:
-    """Override: per-beneficiary 12-month coverage-indicator sequence.
-
-    ``dominant_prob`` of beneficiaries get a flat 12-month pattern of
-    ``dominant_code``; ``secondary_prob`` get a flat pattern of
-    ``secondary_code``; the remainder follow a sticky Markov walk over
-    ``markov_states``. Matched against ``column_label.lower()`` via
-    substring containment.
-    """
-    dominant_code: str
-    dominant_prob: float
-    secondary_code: str
-    secondary_prob: float
-    markov_states: list[str]
-
-
 # Small enumerations whose support is fixed by the ResDAC documentation
 # but whose individual draws are not cohort-derived. Keys are lowercase
 # substrings matched against ``column_label.lower()``.
@@ -227,22 +211,10 @@ _ENUMERATED_CHAR_OVERRIDES: dict[str, EnumeratedTokens] = {
     ),
 }
 
-_ENUMERATED_MARKOV_CHAINS: dict[str, MarkovConfig] = {
-    "buy-in indicator": MarkovConfig(
-        dominant_code="3",
-        dominant_prob=0.765,
-        secondary_code="C",
-        secondary_prob=0.20,
-        markov_states=["0", "1", "2", "A", "B"],
-    ),
-    "hmo indicator": MarkovConfig(
-        dominant_code="3",
-        dominant_prob=0.69,
-        secondary_code="C",
-        secondary_prob=0.30,
-        markov_states=["1", "2", "4"],
-    ),
-}
+# Module-level default chains; a per-run override travels from
+# ``GenerationConfig.markov_chains`` through ``generate_year_files`` into
+# ``char_generation``'s ``markov_chains`` parameter.
+_ENUMERATED_MARKOV_CHAINS: dict[str, MarkovConfig] = default_markov_chains()
 
 _DGNSCD_RE = re.compile(r"DGNSCD(\d*)")
 
@@ -270,8 +242,9 @@ def _build_buyhmo_sequence(n: int, c: MarkovConfig) -> np.ndarray:
     markov_rows = np.where(r >= cutoff)[0]
     if markov_rows.size:
         k = states.size
-        trans = np.full((k, k), 0.005 / (k - 1))
-        np.fill_diagonal(trans, 0.995)
+        p_stay = c.self_transition_prob
+        trans = np.full((k, k), (1.0 - p_stay) / (k - 1))
+        np.fill_diagonal(trans, p_stay)
         for row in markov_rows:
             current = np.random.randint(k)
             for t in range(12):
@@ -286,6 +259,7 @@ def char_generation(
     column_label: str,
     underlying: pd.DataFrame,
     is_medpar: bool,
+    markov_chains: dict[str, MarkovConfig] | None = None,
 ) -> GeneratedColumn:
     """Generate a ``CHAR`` column.
 
@@ -361,7 +335,8 @@ def char_generation(
         if m is not None:
             return GeneratedColumn(underlying[f"diag_{m.group(1)}"], "%s")
 
-    for chain_name, chain_config in _ENUMERATED_MARKOV_CHAINS.items():
+    chains = markov_chains if markov_chains is not None else _ENUMERATED_MARKOV_CHAINS
+    for chain_name, chain_config in chains.items():
         if chain_name in label_lower:
             # char_generation is called once per monthly column (12 per
             # chain), but the Markov walk has to span all 12 months for
