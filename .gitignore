@@ -23,7 +23,8 @@ dist/
 .ipynb_checkpoints/
 
 # IDE
-.idea/
+.idea/*
+!.idea/runConfigurations/
 .vscode/
 
 # Local dataset builds and environments -- never commit these
