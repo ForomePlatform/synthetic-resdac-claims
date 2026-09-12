@@ -12,6 +12,8 @@ most recently shipped tag. Work in flight on `dev` accumulates under
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-12
+
 ### Changed
 - **Coverage-chain parameters extracted to `GenerationConfig`.**
   `MarkovConfig` moved to `synthmed.config` (gaining a
@@ -26,6 +28,15 @@ most recently shipped tag. Work in flight on `dev` accumulates under
   and `::test_char_generation_honors_markov_chains_argument`.
 
 ### Fixed
+- **Output FTS copies now carry true header metadata.** The FTS
+  replicas' header fields "Actual File Name", "Exact File Quantity
+  (Rows)" and "Exact File Size in Bytes ..." held unfilled template
+  placeholders (wrong `req` mask, `1000000,...` junk numbers, a stray
+  `_001` split suffix in the 2016 MEDPAR layout). `copy_fts_files` now
+  rewrites those three lines in each copied FTS with the emitted DAT's
+  real name, row count and byte size; the source replicas and all
+  layout-bearing lines are untouched. Flagged by the 2026-09-12
+  release audit.
 - **Width-9 ZIP fields now carry a full 9-digit ZIP+4.** The cohort
   `zip4` column held only the 5-digit ZIP, so width-9 FTS fields
   (MBSF `BENE_ZIP_CD`) were emitted as `zip5` + 4 trailing blanks

@@ -78,12 +78,57 @@ def discover_year_directories(
     return directory_map
 
 
+_FTS_NAME_PREFIX = "Actual File Name: "
+_FTS_ROWS_PREFIX = "Exact File Quantity (Rows): "
+_FTS_SIZE_PREFIX = "Exact File Size in Bytes with 512 Blocksize: "
+
+
 def copy_fts_files(directory_map: dict[str, dict[str, Path]]) -> None:
-    """Copy every ``.fts`` schema alongside its generated ``.dat`` output."""
+    """Copy every ``.fts`` schema alongside its generated ``.dat`` output,
+    truthing the header metadata to describe the emitted file.
+
+    The source FTS replicas carry unfilled template placeholders in
+    three header fields: the file name (wrong ``req`` mask, and a stray
+    ``_001`` split suffix in the 2016 MEDPAR layout), the row count, and
+    the byte size (e.g. ``1000000,717,260``). Shipping those verbatim
+    next to the DAT misleads consumers that parse headers (flagged by
+    the 2026-09-12 release audit), so each copy is rewritten with the
+    emitted DAT's real name, row count (derived from the byte size and
+    the layout's record length + CRLF), and byte size. Column positions,
+    widths, and the record length are copied untouched. Falls back to a
+    verbatim copy when the sibling DAT does not exist.
+    """
     for entry in directory_map.values():
         for file in listdir(entry["input"]):
-            if file.endswith(".fts"):
-                shutil.copyfile(entry["input"] / file, entry["output"] / file)
+            if not file.endswith(".fts"):
+                continue
+            src = entry["input"] / file
+            dst = entry["output"] / file
+            dat_name = file[:-4] + ".dat"
+            dat_path = entry["output"] / dat_name
+            if not dat_path.is_file():
+                shutil.copyfile(src, dst)
+                continue
+            size = dat_path.stat().st_size
+            text = src.read_text()
+            rec_len = None
+            for line in text.splitlines():
+                if line.startswith("Exact File Record Length"):
+                    rec_len = int(line.rsplit(":", 1)[1].strip())
+                    break
+            rows = size // (rec_len + 2) if rec_len else None  # +2 = CRLF
+            out_lines = []
+            for line in text.splitlines(keepends=True):
+                stripped = line.rstrip("\r\n")
+                eol = line[len(stripped):]
+                if stripped.startswith(_FTS_NAME_PREFIX):
+                    stripped = _FTS_NAME_PREFIX + dat_name
+                elif stripped.startswith(_FTS_ROWS_PREFIX) and rows is not None:
+                    stripped = _FTS_ROWS_PREFIX + f"{rows:,}"
+                elif stripped.startswith(_FTS_SIZE_PREFIX):
+                    stripped = _FTS_SIZE_PREFIX + f"{size:,}"
+                out_lines.append(stripped + eol)
+            dst.write_text("".join(out_lines))
 
 
 def run(
