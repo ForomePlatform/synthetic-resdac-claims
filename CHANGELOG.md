@@ -12,6 +12,18 @@ most recently shipped tag. Work in flight on `dev` accumulates under
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-12
+
+### Added
+- **`--seed today`.** The CLI seed flag now accepts the literal
+  `today`, resolving to the run date as `YYYYMMDD` (e.g. 20260912) so
+  the tracked IDEA run configuration stays date-free while every
+  release run gets a self-documenting seed. The pipeline logs the
+  resolved seed at run start; record it with the version tag wherever
+  the dataset is published — the pair makes the archive
+  bit-reproducible. The "Generate (full 5m)" run configuration now
+  passes `--seed today`. Covered by `tests/test_cli_seed.py`.
+
 ## [0.3.0] - 2026-09-12
 
 ### Changed

@@ -174,6 +174,12 @@ def run(
 
     if config.seed is not None:
         _seed_all_rngs(config.seed)
+        log.info(
+            "RNGs seeded: seed=%d — record this seed with the synthmed "
+            "version tag wherever the output is published; the pair "
+            "makes the dataset bit-reproducible.",
+            config.seed,
+        )
 
     if dist is None:
         log.info("Loading reference distributions and DE-SynPUF samples…")

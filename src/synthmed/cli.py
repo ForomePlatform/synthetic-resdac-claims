@@ -3,11 +3,32 @@
 from __future__ import annotations
 
 import argparse
+from datetime import date
 from pathlib import Path
 
 from synthmed.config import GenerationConfig
 from synthmed.pipeline import run
 from synthmed import samples as samples_mod
+
+
+def resolve_seed(value: str) -> int:
+    """Resolve a ``--seed`` value: an integer literal, or ``today``.
+
+    ``today`` resolves to the run date as ``YYYYMMDD`` (e.g. 20260912),
+    so a release run configuration can stay date-free while every run
+    still gets a self-documenting seed. The pipeline logs the resolved
+    value at run start; record it, together with the synthmed version
+    tag, wherever the dataset is published — the pair makes the archive
+    bit-reproducible.
+    """
+    if value.strip().lower() == "today":
+        return int(date.today().strftime("%Y%m%d"))
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            f"--seed must be an integer or 'today', got {value!r}"
+        ) from exc
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -36,8 +57,10 @@ def _build_parser() -> argparse.ArgumentParser:
                         "(default: GenerationConfig.alive_ratio).")
     g.add_argument("--initial-dob-start", type=int, default=None)
     g.add_argument("--initial-dob-end", type=int, default=None)
-    g.add_argument("--seed", type=int, default=None,
-                   help="If set, seed all RNGs for reproducible output.")
+    g.add_argument("--seed", type=resolve_seed, default=None,
+                   help="Seed all RNGs for reproducible output: an "
+                        "integer, or 'today' for the run date as "
+                        "YYYYMMDD (logged at run start).")
 
     d = sub.add_parser(
         "download-samples",
