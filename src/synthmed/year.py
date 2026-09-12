@@ -155,9 +155,18 @@ def _generate_column(
     raise ValueError(f"Unknown FTS column type {column.type!r} for {column.name!r}")
 
 
-def _right_justify(series: pd.Series, width: int) -> pd.Series:
-    """Right-justify a string column to ``width`` for fixed-width DAT emission."""
-    return series.astype("string").str.rjust(int(width), " ")
+def _left_justify(series: pd.Series, width: int) -> pd.Series:
+    """Left-justify a string column to ``width`` for fixed-width DAT emission.
+
+    CMS fixed-width extracts left-justify CHAR fields (trailing blanks).
+    Until v0.2.x this helper right-justified instead, so any CHAR value
+    shorter than its declared width (e.g. the 5-digit ZIP in the 9-wide
+    ``BENE_ZIP_CD``) landed behind leading spaces; consumers reading the
+    leading bytes of the field then saw blanks, which made the dorieh QC
+    dashboard flag ~100% of ZIPs as invalid. Verified against the QC
+    findings of 2026-09-10.
+    """
+    return series.astype("string").str.ljust(int(width), " ")
 
 
 def _emit_dat(
@@ -254,7 +263,7 @@ def generate_year_files(
             if column.is_numeric_like:
                 out[column.name] = values
             else:
-                out[column.name] = _right_justify(pd.Series(values), int(column.width))
+                out[column.name] = _left_justify(pd.Series(values), int(column.width))
             formatters.append(fmt)
 
         data = pd.DataFrame(out, index=range(n_rows))

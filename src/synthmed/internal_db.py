@@ -65,12 +65,16 @@ def generate_location(cohort: pd.DataFrame, dist: DistributionData) -> pd.DataFr
     n = cohort.shape[0]
 
     cohort["id"] = mint_beneficiary_ids(n)
-    cohort["zip4"] = dist.zip2fips2pop.sample(
+    cohort["zip"] = dist.zip2fips2pop.sample(
         weights=dist.zip2fips2pop["POP"],
         replace=True,
         n=n,
-    ).reset_index(drop=True)["zipcode"]
-    cohort["zip"] = cohort["zip4"].str.slice(0, 5)
+    ).reset_index(drop=True)["zipcode"].str.slice(0, 5)
+    # 9-digit ZIP+4 for width-9 FTS fields (e.g. MBSF BENE_ZIP_CD).
+    # Real extracts fill all nine positions with digits, zero-filling
+    # an unknown +4; a blank +4 tail crashed dorieh's integer cast on
+    # ingestion (2026-09-11), so emit the full 9 digits.
+    cohort["zip4"] = cohort["zip"] + "0000"
 
     cohort = pd.merge(cohort, dist.zip2fips, how="left", left_on="zip", right_on="zipcode")
     cohort = pd.merge(cohort, dist.fip2ssa, how="left", left_on="FIPS", right_on="fipscounty")

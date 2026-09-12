@@ -27,6 +27,17 @@ from synthmed.generators import random_char_gen, random_date_gen
 
 from typing import NamedTuple
 
+# Age labels vary across FTS layouts: "Age at End of Reference Year"
+# in the split MBSF files, "Age at the End of the Reference Year" in
+# the 2016 combined ABCD layout. Match case-insensitively with
+# optional articles; the previous exact-substring test silently missed
+# the ABCD wording and produced uniform random ages in the 2016 file.
+_AGE_LABEL_RE = re.compile(
+    r"age (?:at (?:the )?end of (?:the )?reference year"
+    r"|as of date of admission)",
+    re.IGNORECASE,
+)
+
 
 class GeneratedColumn(NamedTuple):
     """One generated FTS column: per-row values + printf format string.
@@ -61,11 +72,12 @@ def number_generation(
 
     Overrides (highest priority first):
 
-    1. ``"Age at End of Reference Year"`` / ``"Age as of Date of Admission"``
+    1. Age-at-reference-year / age-as-of-admission labels (matched
+       case- and article-insensitively, see ``_AGE_LABEL_RE``)
        → cohort ``age``.
     2. ``"Months Number"`` → uniform integer in ``[1, 12]``.
     3. ``"Year"`` (width 4) → uniform in ``{year, year + 1}``.
-    4. Default: uniform integer in ``[0, 10**width - 1]``.
+    4. Default: uniform integer in ``[0, 10**width)``.
 
     Fractional widths (e.g. ``5.2`` meaning "5 chars, 2 decimal places")
     yield a float in ``[0, 10)`` formatted to ``floor(width) - 2``
@@ -86,10 +98,7 @@ def number_generation(
     year = int(year)
     n = underlying.shape[0]
 
-    if (
-        "Age at End of Reference Year" in column_label
-        or "Age as of Date of Admission" in column_label
-    ):
+    if _AGE_LABEL_RE.search(column_label):
         return GeneratedColumn(underlying["age"], f"%0{int(column_width)}d")
 
     min_num, max_num = _num_range(column_label, column_width, year)
@@ -111,7 +120,8 @@ def _num_range(column_label: str, column_width: float, year: int) -> tuple[int, 
         column_label: FTS long description; triggers
             ``"Months Number"`` and ``"Year"`` overrides.
         column_width: Declared FTS field width in characters; sets the
-            default upper bound to ``10**int(width) - 1``.
+            default upper bound to ``10**int(width)`` (exclusive, so
+            the full ``w``-digit range ``0..10**w - 1`` is drawable).
         year: Calendar year being emitted; used as the lower bound when
             the ``"Year"`` override fires.
     """
@@ -120,7 +130,10 @@ def _num_range(column_label: str, column_width: float, year: int) -> tuple[int, 
     if "Year" in column_label and column_width == 4:
         return year, year + 1
 
-    max_num = (10 ** int(column_width)) - 1
+    # Exclusive upper bound for np.random.randint: 10**w yields the
+    # full 0..10**w - 1 range. (The previous ``10**w - 1`` bound made
+    # the all-nines value unreachable, e.g. 999 for width 3.)
+    max_num = 10 ** int(column_width)
     if max_num > 10**5:
         # TODO: kept verbatim from the upstream notebook -- documented intent
         # is `10 ** 5` (== 100000) but the literal here is `10 * 5` (== 50).
@@ -301,7 +314,11 @@ def char_generation(
     if column_name == "BENE_ID":
         return GeneratedColumn(underlying["id"], "%s")
 
-    if "Zip" in column_label:
+    # Case-insensitive: the split MBSF layouts spell "Zip Code of
+    # Residence" while the 2016 ABCD layout spells "5-digit ZIP Code";
+    # the previous case-sensitive test missed the latter and emitted
+    # random digits instead of the cohort ZIP in the 2016 file.
+    if "zip" in label_lower:
         values = underlying["zip4"] if column_width == 9 else underlying["zip"]
         return GeneratedColumn(values, "%s")
 
