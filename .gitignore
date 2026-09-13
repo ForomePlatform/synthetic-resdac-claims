@@ -2,7 +2,7 @@
 docs-internal/
 
 # Generated outputs
-output_dat_files/
+output_dat_files*/
 
 # Lazy-downloaded CMS DE-SynPUF samples (fetched by `synthmed download-samples`)
 inputs/samples/*.csv

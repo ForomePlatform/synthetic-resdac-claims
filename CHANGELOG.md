@@ -12,6 +12,15 @@ most recently shipped tag. Work in flight on `dev` accumulates under
 
 ## [Unreleased]
 
+### Added
+- **Durable run manifest.** `run()` now writes
+  `<output_dir>/generation-manifest.json` (generator version, seed,
+  parameters, reproducibility statement) before generation starts, so
+  provenance never depends on console output — the seed of the
+  2026-09-12 release run had to be recovered forensically after its
+  console was closed. The manifest ships with the dataset. Covered by
+  `tests/test_manifest.py`.
+
 ## [0.3.1] - 2026-09-12
 
 ### Added

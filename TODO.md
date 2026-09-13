@@ -127,6 +127,18 @@ See [`docs/distributions/demographic_distributions.md`](docs/distributions/demog
   invert to mean "this record's death date is valid", (c) leave as-is
   if real MEDPAR actually carries `"V"` on most rows. Preserved during
   the v0.2 refactor to keep DAT output unchanged.
+- [ ] **MEDPAR admitting diagnosis (`ADMTG_DGNS_CD`) is random digits,
+  not sampled.** The FTS label "Initial diagnosis at time of
+  admission" matches neither diagnosis-override trigger, so the column
+  falls through to the random-digit default (7-digit strings, none
+  ICD-shaped) even though the DE-SynPUF donors carry a real
+  `ADMTNG_ICD9_DGNS_CD` per admission. Fix (target 0.4.0): carry the
+  donor's admitting diagnosis through the internal MEDPAR frame with
+  the trajectory (same donor keeps admitting-vs-billed joint
+  structure) and add the label trigger; set the adjacent 1-wide
+  `ADMTG_DGNS_VRSN_CD` to constant `9` in the same pass. Identical
+  behavior in released v0.2.0 and v0.3.1 data; flagged by the
+  2026-09-13 release audit.
 - [ ] **Most `CHAR` columns without explicit overrides are random digit
   strings.** Matches the upstream prototype but yields semantically
   meaningless values (e.g. HMO sub-indicators, payment codes). Each new

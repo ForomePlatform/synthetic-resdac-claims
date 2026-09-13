@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import random
 import shutil
 import time
+from datetime import datetime, timezone
+from importlib import metadata as _importlib_metadata
 from os import listdir
 from pathlib import Path
 
@@ -30,6 +33,43 @@ def _seed_all_rngs(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
     Faker.seed(seed)
+
+
+def _write_manifest(config: GenerationConfig) -> Path:
+    """Persist run provenance to ``<output_dir>/generation-manifest.json``.
+
+    Console output is ephemeral (a lost run console cost us the seed of
+    the 2026-09-12 release run), so the seed and every parameter needed
+    to reproduce the run are written durably next to the data. The
+    manifest ships with the dataset and belongs in its archive.
+    """
+    try:
+        version = _importlib_metadata.version("synthmed")
+    except _importlib_metadata.PackageNotFoundError:
+        version = "unknown"
+    manifest = {
+        "generator": "synthmed",
+        "version": version,
+        "seed": config.seed,
+        "started_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "total_people": config.total_people,
+        "alive_ratio": config.alive_ratio,
+        "data_root": str(config.data_root),
+        "distribution_dir": str(config.distribution_dir),
+        "sample_dir": str(config.sample_dir),
+        "output_dir": str(config.output_dir),
+        "reproducibility": (
+            "bit-identical regeneration: install this generator version "
+            "and rerun with the same seed and inputs"
+            if config.seed is not None
+            else "UNSEEDED RUN — not regenerable bit-for-bit"
+        ),
+    }
+    path = Path(config.output_dir) / "generation-manifest.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, indent=2) + "\n")
+    log.info("Run manifest written: %s (seed=%s)", path, config.seed)
+    return path
 
 
 def _configure_default_logging() -> None:
@@ -171,6 +211,8 @@ def run(
     inspection.
     """
     _configure_default_logging()
+
+    _write_manifest(config)
 
     if config.seed is not None:
         _seed_all_rngs(config.seed)
