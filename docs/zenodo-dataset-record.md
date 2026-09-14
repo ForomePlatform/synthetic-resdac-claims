@@ -17,10 +17,10 @@ The third row already exists on the live record (F1000Research
 poster) — keep it when editing; this table is the complete
 carry-forward set.
 
-## Corrections to metadata currently live on the record
+## Corrections to earlier live metadata — APPLIED 2026-09-14
 
-Found by the dorieh-side citation audit (2026-09-12); apply during
-the v4 edit pass:
+Found by the dorieh-side citation audit (2026-09-12); applied via
+API in the 0.3.1 version publish (DOI 10.5281/zenodo.22737074):
 
 1. REPLACE the existing related work `{isbn 978-3-032-21031-9,
    relation "describes"}` — it asserts the DATASET describes the
@@ -42,17 +42,18 @@ software record. Requested by Michael on 2026-09-12; decision the
 same day: v3 is NOT edited retroactively — the relation first ships
 with the v4 publish, together with the rest of this record text.
 
-## Pending for the next version (v4, generator v0.3.1)
+## Published version 0.3.1 — DOI 10.5281/zenodo.22737074 (2026-09-14)
 
-To fill after the seeded regeneration and release audit:
+All values below are final and live on the record:
 
 - Zip name: `medicare-synthetic-database-v.0.3.1.zip` (match the
   generator tag that produced it). INCLUDE
   `generation-manifest.json` from the output directory in the
   archive — it carries version, seed, and the reproducibility
   statement.
-- Compressed size: MEASURE after zipping (v3 was 9.2 GB for the
-  v0.2.0 data; raw total below suggests a similar ratio).
+- Compressed size: 9,059,006,195 bytes (9.06 GB decimal / 8.44 GiB);
+  local MD5 `e68ade07e00ecbc2dfafa35d8c314832` (verify Zenodo shows
+  the same checksum before publishing).
 - Raw size: 27,594,546,707 bytes = 25.70 GiB (27.59 decimal GB),
   17 DAT + 17 FTS files; FTS headers carry true per-file name, row
   count and byte size. Version field: 0.3.1.
