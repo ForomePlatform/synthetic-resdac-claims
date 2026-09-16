@@ -70,6 +70,48 @@ See [`docs/distributions/demographic_distributions.md`](docs/distributions/demog
 
 ## Column generation
 
+- [ ] **Model a full 9-digit ZIP+4 in the cohort (medium priority,
+  Michael 2026-09-11).** `zip4` is currently `zip + "0000"` (the
+  2026-09-11 hot-fix for the blank-tail ingestion crash). Design per
+  Michael: load the USPS ZIP+4 database (available) as a new
+  reference input and sample an actual +4 combination conditional on
+  the beneficiary's ZIP5, once at cohort build — cross-file and
+  cross-year consistency then comes for free, and consumers get
+  realistic, USPS-valid 9-digit ZIPs to parse. Emission already
+  selects `zip` vs `zip4` by FTS width, so no emitter change is
+  needed. Two checks before implementing: (1) redistribution license
+  of the USPS ZIP+4 product — every other reference input is openly
+  redistributable, and the released dataset must stay so (ship the
+  sampler, not the database, if the license is restrictive); (2) add
+  the provenance sidecar under `docs/distributions/` per house
+  convention. CONFIRMED 2026-09-11 (dorieh session): real MBSF
+  carries the +4 only "when provided" (dorieh medicare.yaml:77,
+  doc/Medicare.md:453), so the faithful emulation is a MIX — a real
+  USPS-sampled +4 for a plausible fraction of beneficiaries, blank
+  tail for the rest, NOT constant "0000" (which reads as zip4 = 0,
+  never NULL, on every QC panel). dorieh staged a blank-tolerant
+  `NULLIF(TRIM(...))` cast on dev-0.5.x, so blank tails no longer
+  crash ingestion; sequencing: any synthmed revert to blank tails
+  must land AFTER that dorieh fix is deployed. Interim decision
+  (keep "0000" vs revert to blanks before the USPS work) is
+  Michael's, currently open.
+- [ ] **`randint` exclusive-high leftovers in the `_num_range`
+  overrides.** "Months Number" columns draw `randint(1, 12)`, so the
+  value 12 (a full year of coverage) is unreachable; the width-4
+  "Year" override draws `randint(year, year + 1)`, so it always
+  yields the base year. Both docstrings claim the inclusive ranges.
+  Decide intent per override (months likely 1–12; year-only may be
+  correct for reference-year columns), then align code and docstrings.
+  The default-range and date-generation siblings of this bug family
+  were fixed on 2026-09-10.
+- [ ] **Stale docstrings contradicting behavior.**
+  `year._reorder_medpar_last` claims the reverse-if-first trick
+  "preserves the existing MBSF-vs-MBSF relative order"; reversal
+  swaps it (the paper's Figure 2 shows the swapped order correctly).
+  `medpar.py` calls the injected duplicate admissions "verbatim"
+  clones, but emitted DAT rows differ in dates and every default
+  column, so natural-key dedup cannot detect them — decide whether
+  that difficulty is intended or clones should share admission dates.
 - [ ] **`number_generation` width-6+ cap is `10*5 = 50`, not `10**5 = 100000`.**
   See [`synthmed.columns._num_range`](src/synthmed/columns.py).
   Behavior preserved from the upstream prototype; the documented intent
@@ -85,6 +127,18 @@ See [`docs/distributions/demographic_distributions.md`](docs/distributions/demog
   invert to mean "this record's death date is valid", (c) leave as-is
   if real MEDPAR actually carries `"V"` on most rows. Preserved during
   the v0.2 refactor to keep DAT output unchanged.
+- [ ] **MEDPAR admitting diagnosis (`ADMTG_DGNS_CD`) is random digits,
+  not sampled.** The FTS label "Initial diagnosis at time of
+  admission" matches neither diagnosis-override trigger, so the column
+  falls through to the random-digit default (7-digit strings, none
+  ICD-shaped) even though the DE-SynPUF donors carry a real
+  `ADMTNG_ICD9_DGNS_CD` per admission. Fix (target 0.4.0): carry the
+  donor's admitting diagnosis through the internal MEDPAR frame with
+  the trajectory (same donor keeps admitting-vs-billed joint
+  structure) and add the label trigger; set the adjacent 1-wide
+  `ADMTG_DGNS_VRSN_CD` to constant `9` in the same pass. Identical
+  behavior in released v0.2.0 and v0.3.1 data; flagged by the
+  2026-09-13 release audit.
 - [ ] **Most `CHAR` columns without explicit overrides are random digit
   strings.** Matches the upstream prototype but yields semantically
   meaningless values (e.g. HMO sub-indicators, payment codes). Each new

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import random
 import shutil
 import time
+from datetime import datetime, timezone
+from importlib import metadata as _importlib_metadata
 from os import listdir
 from pathlib import Path
 
@@ -30,6 +33,43 @@ def _seed_all_rngs(seed: int) -> None:
     random.seed(seed)
     np.random.seed(seed)
     Faker.seed(seed)
+
+
+def _write_manifest(config: GenerationConfig) -> Path:
+    """Persist run provenance to ``<output_dir>/generation-manifest.json``.
+
+    Console output is ephemeral (a lost run console cost us the seed of
+    the 2026-09-12 release run), so the seed and every parameter needed
+    to reproduce the run are written durably next to the data. The
+    manifest ships with the dataset and belongs in its archive.
+    """
+    try:
+        version = _importlib_metadata.version("synthmed")
+    except _importlib_metadata.PackageNotFoundError:
+        version = "unknown"
+    manifest = {
+        "generator": "synthmed",
+        "version": version,
+        "seed": config.seed,
+        "started_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "total_people": config.total_people,
+        "alive_ratio": config.alive_ratio,
+        "data_root": str(config.data_root),
+        "distribution_dir": str(config.distribution_dir),
+        "sample_dir": str(config.sample_dir),
+        "output_dir": str(config.output_dir),
+        "reproducibility": (
+            "bit-identical regeneration: install this generator version "
+            "and rerun with the same seed and inputs"
+            if config.seed is not None
+            else "UNSEEDED RUN — not regenerable bit-for-bit"
+        ),
+    }
+    path = Path(config.output_dir) / "generation-manifest.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(manifest, indent=2) + "\n")
+    log.info("Run manifest written: %s (seed=%s)", path, config.seed)
+    return path
 
 
 def _configure_default_logging() -> None:
@@ -78,12 +118,57 @@ def discover_year_directories(
     return directory_map
 
 
+_FTS_NAME_PREFIX = "Actual File Name: "
+_FTS_ROWS_PREFIX = "Exact File Quantity (Rows): "
+_FTS_SIZE_PREFIX = "Exact File Size in Bytes with 512 Blocksize: "
+
+
 def copy_fts_files(directory_map: dict[str, dict[str, Path]]) -> None:
-    """Copy every ``.fts`` schema alongside its generated ``.dat`` output."""
+    """Copy every ``.fts`` schema alongside its generated ``.dat`` output,
+    truthing the header metadata to describe the emitted file.
+
+    The source FTS replicas carry unfilled template placeholders in
+    three header fields: the file name (wrong ``req`` mask, and a stray
+    ``_001`` split suffix in the 2016 MEDPAR layout), the row count, and
+    the byte size (e.g. ``1000000,717,260``). Shipping those verbatim
+    next to the DAT misleads consumers that parse headers (flagged by
+    the 2026-09-12 release audit), so each copy is rewritten with the
+    emitted DAT's real name, row count (derived from the byte size and
+    the layout's record length + CRLF), and byte size. Column positions,
+    widths, and the record length are copied untouched. Falls back to a
+    verbatim copy when the sibling DAT does not exist.
+    """
     for entry in directory_map.values():
         for file in listdir(entry["input"]):
-            if file.endswith(".fts"):
-                shutil.copyfile(entry["input"] / file, entry["output"] / file)
+            if not file.endswith(".fts"):
+                continue
+            src = entry["input"] / file
+            dst = entry["output"] / file
+            dat_name = file[:-4] + ".dat"
+            dat_path = entry["output"] / dat_name
+            if not dat_path.is_file():
+                shutil.copyfile(src, dst)
+                continue
+            size = dat_path.stat().st_size
+            text = src.read_text()
+            rec_len = None
+            for line in text.splitlines():
+                if line.startswith("Exact File Record Length"):
+                    rec_len = int(line.rsplit(":", 1)[1].strip())
+                    break
+            rows = size // (rec_len + 2) if rec_len else None  # +2 = CRLF
+            out_lines = []
+            for line in text.splitlines(keepends=True):
+                stripped = line.rstrip("\r\n")
+                eol = line[len(stripped):]
+                if stripped.startswith(_FTS_NAME_PREFIX):
+                    stripped = _FTS_NAME_PREFIX + dat_name
+                elif stripped.startswith(_FTS_ROWS_PREFIX) and rows is not None:
+                    stripped = _FTS_ROWS_PREFIX + f"{rows:,}"
+                elif stripped.startswith(_FTS_SIZE_PREFIX):
+                    stripped = _FTS_SIZE_PREFIX + f"{size:,}"
+                out_lines.append(stripped + eol)
+            dst.write_text("".join(out_lines))
 
 
 def run(
@@ -127,8 +212,16 @@ def run(
     """
     _configure_default_logging()
 
+    _write_manifest(config)
+
     if config.seed is not None:
         _seed_all_rngs(config.seed)
+        log.info(
+            "RNGs seeded: seed=%d — record this seed with the synthmed "
+            "version tag wherever the output is published; the pair "
+            "makes the dataset bit-reproducible.",
+            config.seed,
+        )
 
     if dist is None:
         log.info("Loading reference distributions and DE-SynPUF samples…")
@@ -175,7 +268,10 @@ def run(
         entry = directory_map[current_year]
         # cohort → every MBSF file for current_year; medpar → MEDPAR file.
         # The MBSF/MEDPAR dispatch is FTS-filename-based inside year.py.
-        generate_year_files(entry["input"], entry["output"], current_year, cohort, medpar)
+        generate_year_files(
+            entry["input"], entry["output"], current_year, cohort, medpar,
+            markov_chains=config.markov_chains,
+        )
         log.info(
             "Year %s: done in %.1fs (MBSF=%d rows, MEDPAR=%d rows)",
             current_year, time.perf_counter() - year_start, len(cohort), len(medpar),

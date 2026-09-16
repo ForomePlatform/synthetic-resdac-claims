@@ -91,7 +91,10 @@ Weights renormalized so the total is exactly 1.0.
 
 Derived from the
 [Chronic Conditions Data Warehouse (CCW) Medicare Enrollment Charts](https://www2.ccwdata.org/web/guest/medicare-charts/medicare-enrollment-charts)
-[@ccw-medicare-enrollment-charts] and
+[@ccw-medicare-enrollment-charts]
+(as of September 2026 the live page requires vetted CCW access; an
+[archived copy of 2026-06-10](https://web.archive.org/web/20260610033354/https://www2.ccwdata.org/web/guest/medicare-charts/medicare-enrollment-charts)
+preserves the version consumed here) and
 [KFF *Distribution of Medicare Beneficiaries by Sex*](https://www.kff.org/medicare/state-indicator/medicare-beneficiaries-by-sex/)
 [@kff-medicare-sex-state-indicator], both of which give ~55.4% female /
 ~44.5% male for the 2012–2015 window

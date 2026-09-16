@@ -32,8 +32,14 @@ def random_date_gen(
     end: pd.Timestamp,
     n: int,
 ) -> np.ndarray:
-    """Return ``n`` random dates in ``[start, end)`` formatted as ``CCYYMMDD`` strings."""
+    """Return ``n`` random dates in ``[start, end]`` (end day inclusive)
+    formatted as ``CCYYMMDD`` strings.
+
+    Every call site passes a calendar boundary (e.g. Dec 31) as
+    ``end`` and intends it to be drawable; the previous end-exclusive
+    draw made Dec 31 unreachable in every generated date column.
+    """
     start_s = start.value // 10**9
-    end_s = end.value // 10**9
+    end_s = end.value // 10**9 + 86_400  # include the whole end day
     dates = pd.to_datetime(np.random.randint(start_s, end_s, n), unit="s")
     return dates.strftime("%Y%m%d")

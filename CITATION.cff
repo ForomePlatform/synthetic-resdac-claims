@@ -71,10 +71,10 @@ preferred-citation:
       affiliation: Harvard University
       orcid: "https://orcid.org/0000-0002-3161-5601"
   year: 2026
-  month: 6
+  month: 9
   publisher:
     name: Zenodo
-  version: v3
-  doi: 10.5281/zenodo.20495138
-  url: "https://doi.org/10.5281/zenodo.20495138"
+  version: 0.3.1
+  doi: 10.5281/zenodo.22737074
+  url: "https://doi.org/10.5281/zenodo.22737074"
   license: CC-BY-4.0

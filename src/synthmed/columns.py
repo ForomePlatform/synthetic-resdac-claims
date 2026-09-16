@@ -22,9 +22,21 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from synthmed.config import MarkovConfig, default_markov_chains
 from synthmed.generators import random_char_gen, random_date_gen
 
 from typing import NamedTuple
+
+# Age labels vary across FTS layouts: "Age at End of Reference Year"
+# in the split MBSF files, "Age at the End of the Reference Year" in
+# the 2016 combined ABCD layout. Match case-insensitively with
+# optional articles; the previous exact-substring test silently missed
+# the ABCD wording and produced uniform random ages in the 2016 file.
+_AGE_LABEL_RE = re.compile(
+    r"age (?:at (?:the )?end of (?:the )?reference year"
+    r"|as of date of admission)",
+    re.IGNORECASE,
+)
 
 
 class GeneratedColumn(NamedTuple):
@@ -60,11 +72,12 @@ def number_generation(
 
     Overrides (highest priority first):
 
-    1. ``"Age at End of Reference Year"`` / ``"Age as of Date of Admission"``
+    1. Age-at-reference-year / age-as-of-admission labels (matched
+       case- and article-insensitively, see ``_AGE_LABEL_RE``)
        → cohort ``age``.
     2. ``"Months Number"`` → uniform integer in ``[1, 12]``.
     3. ``"Year"`` (width 4) → uniform in ``{year, year + 1}``.
-    4. Default: uniform integer in ``[0, 10**width - 1]``.
+    4. Default: uniform integer in ``[0, 10**width)``.
 
     Fractional widths (e.g. ``5.2`` meaning "5 chars, 2 decimal places")
     yield a float in ``[0, 10)`` formatted to ``floor(width) - 2``
@@ -85,10 +98,7 @@ def number_generation(
     year = int(year)
     n = underlying.shape[0]
 
-    if (
-        "Age at End of Reference Year" in column_label
-        or "Age as of Date of Admission" in column_label
-    ):
+    if _AGE_LABEL_RE.search(column_label):
         return GeneratedColumn(underlying["age"], f"%0{int(column_width)}d")
 
     min_num, max_num = _num_range(column_label, column_width, year)
@@ -110,7 +120,8 @@ def _num_range(column_label: str, column_width: float, year: int) -> tuple[int, 
         column_label: FTS long description; triggers
             ``"Months Number"`` and ``"Year"`` overrides.
         column_width: Declared FTS field width in characters; sets the
-            default upper bound to ``10**int(width) - 1``.
+            default upper bound to ``10**int(width)`` (exclusive, so
+            the full ``w``-digit range ``0..10**w - 1`` is drawable).
         year: Calendar year being emitted; used as the lower bound when
             the ``"Year"`` override fires.
     """
@@ -119,7 +130,10 @@ def _num_range(column_label: str, column_width: float, year: int) -> tuple[int, 
     if "Year" in column_label and column_width == 4:
         return year, year + 1
 
-    max_num = (10 ** int(column_width)) - 1
+    # Exclusive upper bound for np.random.randint: 10**w yields the
+    # full 0..10**w - 1 range. (The previous ``10**w - 1`` bound made
+    # the all-nines value unreachable, e.g. 999 for width 3.)
+    max_num = 10 ** int(column_width)
     if max_num > 10**5:
         # TODO: kept verbatim from the upstream notebook -- documented intent
         # is `10 ** 5` (== 100000) but the literal here is `10 * 5` (== 50).
@@ -201,23 +215,6 @@ class EnumeratedTokens:
     tokens: tuple[str, ...]
 
 
-@dataclass
-class MarkovConfig:
-    """Override: per-beneficiary 12-month coverage-indicator sequence.
-
-    ``dominant_prob`` of beneficiaries get a flat 12-month pattern of
-    ``dominant_code``; ``secondary_prob`` get a flat pattern of
-    ``secondary_code``; the remainder follow a sticky Markov walk over
-    ``markov_states``. Matched against ``column_label.lower()`` via
-    substring containment.
-    """
-    dominant_code: str
-    dominant_prob: float
-    secondary_code: str
-    secondary_prob: float
-    markov_states: list[str]
-
-
 # Small enumerations whose support is fixed by the ResDAC documentation
 # but whose individual draws are not cohort-derived. Keys are lowercase
 # substrings matched against ``column_label.lower()``.
@@ -227,22 +224,10 @@ _ENUMERATED_CHAR_OVERRIDES: dict[str, EnumeratedTokens] = {
     ),
 }
 
-_ENUMERATED_MARKOV_CHAINS: dict[str, MarkovConfig] = {
-    "buy-in indicator": MarkovConfig(
-        dominant_code="3",
-        dominant_prob=0.765,
-        secondary_code="C",
-        secondary_prob=0.20,
-        markov_states=["0", "1", "2", "A", "B"],
-    ),
-    "hmo indicator": MarkovConfig(
-        dominant_code="3",
-        dominant_prob=0.69,
-        secondary_code="C",
-        secondary_prob=0.30,
-        markov_states=["1", "2", "4"],
-    ),
-}
+# Module-level default chains; a per-run override travels from
+# ``GenerationConfig.markov_chains`` through ``generate_year_files`` into
+# ``char_generation``'s ``markov_chains`` parameter.
+_ENUMERATED_MARKOV_CHAINS: dict[str, MarkovConfig] = default_markov_chains()
 
 _DGNSCD_RE = re.compile(r"DGNSCD(\d*)")
 
@@ -270,8 +255,9 @@ def _build_buyhmo_sequence(n: int, c: MarkovConfig) -> np.ndarray:
     markov_rows = np.where(r >= cutoff)[0]
     if markov_rows.size:
         k = states.size
-        trans = np.full((k, k), 0.005 / (k - 1))
-        np.fill_diagonal(trans, 0.995)
+        p_stay = c.self_transition_prob
+        trans = np.full((k, k), (1.0 - p_stay) / (k - 1))
+        np.fill_diagonal(trans, p_stay)
         for row in markov_rows:
             current = np.random.randint(k)
             for t in range(12):
@@ -286,6 +272,7 @@ def char_generation(
     column_label: str,
     underlying: pd.DataFrame,
     is_medpar: bool,
+    markov_chains: dict[str, MarkovConfig] | None = None,
 ) -> GeneratedColumn:
     """Generate a ``CHAR`` column.
 
@@ -327,7 +314,11 @@ def char_generation(
     if column_name == "BENE_ID":
         return GeneratedColumn(underlying["id"], "%s")
 
-    if "Zip" in column_label:
+    # Case-insensitive: the split MBSF layouts spell "Zip Code of
+    # Residence" while the 2016 ABCD layout spells "5-digit ZIP Code";
+    # the previous case-sensitive test missed the latter and emitted
+    # random digits instead of the cohort ZIP in the 2016 file.
+    if "zip" in label_lower:
         values = underlying["zip4"] if column_width == 9 else underlying["zip"]
         return GeneratedColumn(values, "%s")
 
@@ -361,7 +352,8 @@ def char_generation(
         if m is not None:
             return GeneratedColumn(underlying[f"diag_{m.group(1)}"], "%s")
 
-    for chain_name, chain_config in _ENUMERATED_MARKOV_CHAINS.items():
+    chains = markov_chains if markov_chains is not None else _ENUMERATED_MARKOV_CHAINS
+    for chain_name, chain_config in chains.items():
         if chain_name in label_lower:
             # char_generation is called once per monthly column (12 per
             # chain), but the Markov walk has to span all 12 months for

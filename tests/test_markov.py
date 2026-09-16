@@ -13,6 +13,8 @@ Each test seeds ``numpy`` inside its body so a pass/fail is reproducible.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -185,12 +187,14 @@ def test_char_generation_separates_caches_per_chain():
     assert cached_buyin is not cached_hmo
 
     # Alphabet check (regression for the per-chain config-dispatch bug):
-    # buy-in Markov states are {0,1,2,A,B}; HMO Markov states are {1,2,4}.
-    # If HMO had silently reused the buy-in config, we'd see "0", "A", or
-    # "B" in the HMO sequence.
+    # buy-in support is {0,1,2,3,A,B,C}; HMO support is {0,1,2,4,C}.
+    # Codes unique to buy-in are therefore {3, A, B} ("3" doubles as a
+    # regression sentinel for the old copy-pasted HMO dominant code,
+    # fixed 2026-09-08). If HMO silently reused the buy-in config, one
+    # of these would appear in the HMO sequence.
     hmo_codes = set(np.unique(cached_hmo).tolist())
-    assert hmo_codes.isdisjoint({"0", "A", "B"}), (
-        f"HMO sequence leaked buy-in-only codes: {hmo_codes & {'0', 'A', 'B'}}"
+    assert hmo_codes.isdisjoint({"3", "A", "B"}), (
+        f"HMO sequence leaked buy-in-only codes: {hmo_codes & {'3', 'A', 'B'}}"
     )
 
 
@@ -216,3 +220,39 @@ def test_char_generation_matches_label_case_insensitively():
     assert "_buyhmo_seq::buy-in indicator" in underlying.attrs
     cached = underlying.attrs["_buyhmo_seq::buy-in indicator"]
     np.testing.assert_array_equal(np.asarray(result.values), cached[:, 0])
+
+
+def test_generation_config_defaults_match_module_chains():
+    """GenerationConfig.markov_chains defaults to the module default chains."""
+    from synthmed.config import GenerationConfig, default_markov_chains
+
+    cfg = GenerationConfig(
+        data_root=Path("."), distribution_dir=Path("."),
+        sample_dir=Path("."), output_dir=Path("."),
+    )
+    assert cfg.markov_chains == default_markov_chains()
+    assert cfg.markov_chains == _ENUMERATED_MARKOV_CHAINS
+    # default_factory must yield an independent copy per config instance
+    cfg.markov_chains["hmo indicator"].dominant_prob = 0.5
+    assert _ENUMERATED_MARKOV_CHAINS["hmo indicator"].dominant_prob == 0.69
+
+
+def test_char_generation_honors_markov_chains_argument():
+    """A per-run chains dict overrides the module defaults end to end."""
+    np.random.seed(11)
+    n = 200
+    underlying = _underlying(n)
+    custom = {
+        "hmo indicator": MarkovConfig(
+            dominant_code="Z", dominant_prob=1.0,
+            secondary_code="Y", secondary_prob=0.0,
+            markov_states=["X"],
+        )
+    }
+    col = char_generation(
+        column_name="HMOIND01", column_width=1,
+        column_label="HMO Indicator: January",
+        underlying=underlying, is_medpar=False,
+        markov_chains=custom,
+    )
+    assert set(np.unique(np.asarray(col.values))) == {"Z"}

@@ -12,6 +12,116 @@ most recently shipped tag. Work in flight on `dev` accumulates under
 
 ## [Unreleased]
 
+### Added
+- **Durable run manifest.** `run()` now writes
+  `<output_dir>/generation-manifest.json` (generator version, seed,
+  parameters, reproducibility statement) before generation starts, so
+  provenance never depends on console output — the seed of the
+  2026-09-12 release run had to be recovered forensically after its
+  console was closed. The manifest ships with the dataset. Covered by
+  `tests/test_manifest.py`.
+
+## [0.3.1] - 2026-09-12
+
+### Added
+- **`--seed today`.** The CLI seed flag now accepts the literal
+  `today`, resolving to the run date as `YYYYMMDD` (e.g. 20260912) so
+  the tracked IDEA run configuration stays date-free while every
+  release run gets a self-documenting seed. The pipeline logs the
+  resolved seed at run start; record it with the version tag wherever
+  the dataset is published — the pair makes the archive
+  bit-reproducible. The "Generate (full 5m)" run configuration now
+  passes `--seed today`. Covered by `tests/test_cli_seed.py`.
+
+## [0.3.0] - 2026-09-12
+
+### Changed
+- **Coverage-chain parameters extracted to `GenerationConfig`.**
+  `MarkovConfig` moved to `synthmed.config` (gaining a
+  `self_transition_prob` field, default 0.995, replacing the hardcoded
+  transition matrix), and `GenerationConfig` gained a `markov_chains`
+  mapping (default: `default_markov_chains()`, the ResDAC-coded Buy-In
+  and HMO chains). The mapping is threaded through
+  `generate_year_files` and `_generate_column` into `char_generation`,
+  whose `markov_chains` parameter falls back to the module defaults, so
+  existing imports and call sites are unchanged. Locked in by
+  `tests/test_markov.py::test_generation_config_defaults_match_module_chains`
+  and `::test_char_generation_honors_markov_chains_argument`.
+
+### Fixed
+- **Output FTS copies now carry true header metadata.** The FTS
+  replicas' header fields "Actual File Name", "Exact File Quantity
+  (Rows)" and "Exact File Size in Bytes ..." held unfilled template
+  placeholders (wrong `req` mask, `1000000,...` junk numbers, a stray
+  `_001` split suffix in the 2016 MEDPAR layout). `copy_fts_files` now
+  rewrites those three lines in each copied FTS with the emitted DAT's
+  real name, row count and byte size; the source replicas and all
+  layout-bearing lines are untouched. Flagged by the 2026-09-12
+  release audit.
+- **Width-9 ZIP fields now carry a full 9-digit ZIP+4.** The cohort
+  `zip4` column held only the 5-digit ZIP, so width-9 FTS fields
+  (MBSF `BENE_ZIP_CD`) were emitted as `zip5` + 4 trailing blanks
+  after the left-justification fix, and dorieh's ingestion crashed
+  casting the blank +4 subfield to integer (`invalid input syntax for
+  type integer: "    "`, 2026-09-11). `zip4` is now `zip + "0000"`
+  so the +4 subfield stays castable (layout-contract call by Michael).
+  Follow-up the same day: dorieh's own docs (medicare.yaml:77,
+  doc/Medicare.md:453) record that real MBSF carries the +4 only when
+  provided — a blank tail is the faithful emulation, and dorieh's
+  length guard existed for exactly that case until fixed-width padding
+  defeated it. dorieh has since staged a blank-tolerant
+  `NULLIF(TRIM(...))` cast, so reverting to a blank tail is viable;
+  the direction decision is tracked in TODO.md ("Model a full 9-digit
+  ZIP+4").
+- **CHAR fields are now left-justified in emitted DAT files.** CMS
+  fixed-width extracts left-justify CHAR columns (trailing blanks);
+  the emitter right-justified them instead, so any CHAR value shorter
+  than its declared width — most visibly the 5-digit ZIP inside the
+  9-wide `BENE_ZIP_CD` — carried leading spaces. Consumers reading the
+  leading bytes of the field saw blanks: the dorieh QC dashboard
+  flagged ~100% of MBSF ZIPs as invalid and ~99.9% as inconsistent
+  with the county code, although the underlying zip/county pairs are
+  coherent (95.6% exact SSA-county match on the 2011 sample, 100%
+  state-level, residual = multi-county ZIPs). Surfaced by the QC
+  dashboard audit of 2026-09-10; datasets generated before this fix
+  right-justify every under-width CHAR value.
+- **2016 ABCD layout: Age and ZIP overrides never fired.** The combined
+  `mbsf_abcd_summary` FTS spells the labels "Age at the End of the
+  Reference Year" and "5-digit ZIP Code"; the exact-substring test
+  ("Age at End of Reference Year") and the case-sensitive `"Zip"` test
+  both missed them, so the 2016 file carried uniform random ages
+  (0..998, inconsistent with DOB) and random-digit ZIPs (unrelated to
+  the cohort ZIP that MEDPAR 2016 carries correctly). Age labels now
+  match case- and article-insensitively (`_AGE_LABEL_RE`); the ZIP
+  trigger is case-insensitive. Surfaced by a full-dataset audit of the
+  regenerated 5M set on 2026-09-10; datasets generated before this fix
+  have both defects in every 2016 ABCD row.
+- **Off-by-one upper bounds: all-nines NUM values and Dec 31 were
+  unreachable.** `_num_range` passed `10**w - 1` to `np.random.randint`,
+  whose high end is exclusive, so e.g. 999 never occurred in a width-3
+  NUM column (audit: 0 occurrences of 999 in 10.4M x 11 draws, while
+  998 appeared at the uniform rate). `random_date_gen` similarly drew
+  in `[start, end)` with callers passing Dec 31 as `end`, so Dec 31
+  never occurred in any generated date column (~13.5k expected
+  occurrences per column per year). NUM defaults now draw in
+  `[0, 10**w)`; `random_date_gen` includes the whole end day. The
+  "Months Number" (values 1..11) and "Year" (always base year)
+  override bounds are NOT changed in this entry; they remain tracked
+  in TODO.md.
+- **HMO indicator dominant code corrected from `"3"` to `"0"`.** ResDAC
+  defines no code 3 for the HMO indicator (the value set is 0, 1, 2, 4,
+  A, B, C; see resdac.org/cms-data/variables/hmo-indicator); `"3"` was
+  a copy-paste of the buy-in chain's dominant code, so ~69 % of every
+  `HMOIND01..12` column in the v0.2.0 release carries an out-of-domain
+  value. The dominant steady state is now `"0"` ("Not a member of
+  HMO"), matching the real-world modal category. Surfaced by a
+  code-vs-paper audit on 2026-09-08 and confirmed against the shipped
+  v0.2.0 DAT files (68.8 % `"3"`, `"0"` absent). Tests are
+  config-driven and pass unchanged; datasets regenerated after this fix
+  will differ in the HMO columns.
+
+## [0.2.0] - 2026-09-07
+
 ### Fixed
 - **CLI flags no longer silently shadow `GenerationConfig` defaults.**
   [`synthmed.cli`](src/synthmed/cli.py) was hardcoding default values
@@ -68,6 +178,17 @@ most recently shipped tag. Work in flight on `dev` accumulates under
   Locked in by `tests/test_statistical.py::test_dob_error_shape_peaks_at_month_boundaries`.
 
 ### Added
+- **HMO and Part A/B Buy-In monthly coverage indicators**
+  (`BUYIN01..12`, `HMOIND01..12`) generated by sticky first-order
+  Markov chains: a dominant flat fraction of beneficiaries holds one
+  state all year, a secondary flat fraction holds another, and the
+  remainder follows a per-month chain with 0.995 self-transition and
+  the residual mass spread uniformly. New `MarkovConfig` and
+  [`synthmed.columns._build_buyhmo_sequence`](src/synthmed/columns.py),
+  dispatched and cached per chain from `char_generation` via
+  `_ENUMERATED_MARKOV_CHAINS`. Contributed by Mark Chumack, who joins
+  the author list (`CITATION.cff`, `pyproject.toml`, README) with
+  this release. Locked in by `tests/test_markov.py`.
 - **`GenerationConfig.duplicate_admission_rate`** (default `0.0013`,
   ≈ 20× the previous accidental baseline of ~1 in 15k that emerged
   from independent admission-date draws). New
