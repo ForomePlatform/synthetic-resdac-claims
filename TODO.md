@@ -210,6 +210,52 @@ See [`docs/distributions/ssa_fips_state_county_2025.md`](docs/distributions/ssa_
 
 ## Error injection
 
+- [ ] **Duplicate-admission injection is ineffective as emitted.**
+  `_inject_duplicate_admissions` clones internal MEDPAR rows
+  (appended at EOF, ~0.13% rate), but every claim-level field is
+  drawn per row at emission, so the released clones share only the
+  beneficiary identifier and diagnosis block while admission and
+  discharge dates differ. Measured on the v0.3.1 release files
+  (2026-09-14): of 1,735 clone pairs in MEDPAR 2011, 6 share an
+  admission date (chance level), 0 share both dates, 0 are
+  byte-identical. Michael's verdict: rows with different admission
+  dates are simply different admissions — no deduplication logic can
+  or should catch them — so the feature currently models nothing.
+  Fix in 0.4.x per Michael's definition (2026-09-14): a duplicate
+  means SAME `bene_id` AND SAME admission date — so clones must
+  inherit at least the admission date from their source (carry it in
+  the internal frame, or duplicate at the emitted-record level);
+  whether they also share the discharge date is a domain call
+  (dorieh's admissions key is (bene, year, state, admission_date,
+  discharge_date), so date-sharing clones without discharge match
+  would surface as bene+date duplicates but not PK collisions).
+  Align the `medpar.py` "verbatim" docstring (see the
+  stale-docstrings item) and re-word the paper if the feature is
+  restored. The camera-ready paper no longer claims duplicate
+  injection. Chance context measured on v0.3.1: ~500 same-bene+date
+  pairs per year arise naturally from independent date draws; 4
+  full-key collisions warehouse-wide.
+
+- [ ] **`no_medpar_error_rate` is misnamed / not an error.** Zeroing
+  ~1% of persisting beneficiaries' admission counts is
+  indistinguishable from the ~77% who are naturally not admitted in
+  a year (Poisson(0.267) gives P(0)=0.766), so it is population
+  dynamics, not a detectable defect (Michael, 2026-09-14). Rename or
+  reclassify in config/docs; the paper no longer lists it among the
+  injected distortions.
+
+- [ ] **Missing-DOB half of the MEDPAR field injection is a silent
+  no-op.** `generate_internal_medpar_errors` splits each state's rate
+  `r` into two bands: `[0, r/2)` blanks the beneficiary ID, `[r/2, r)`
+  blanks the internal `birth_date` — but no MEDPAR FTS layout carries
+  a birth-date column, so the second band never reaches the emitted
+  files and the observable blank-ID rate is `r/2`, not `r`. Harmless
+  in output (Michael, 2026-09-14: fix later); decide in 0.4.x whether
+  to apply the full rate to identifiers or delete the dead branch,
+  and reconcile the `state_error_medpar_rates.md` sidecar wording in
+  the same pass. Surfaced by the 2026-09-12/13 release audits; the
+  camera-ready paper describes only the observable behavior.
+
 See [`docs/distributions/state_error_medpar_rates.md`](docs/distributions/state_error_medpar_rates.md).
 
 - [ ] **Orphan-admission rate default is best-guess.** `GenerationConfig.orphan_admission_rate`
